@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Edit2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Types
 interface License { id: string; fantasyName: string; legalName: string; }
@@ -68,11 +69,11 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
+      <DialogTrigger nativeButton={true} render={
+        <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
           <Edit2 size={16} />
-        </Button>
-      </DialogTrigger>
+        </button>
+      } />
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Editar Produto</DialogTitle>

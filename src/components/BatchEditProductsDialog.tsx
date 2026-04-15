@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Edit2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Types
 interface License { id: string; fantasyName: string; legalName: string; }
@@ -52,11 +53,11 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2">
+      <DialogTrigger nativeButton={true} render={
+        <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Edit2 size={16} /> Editar Selecionados
-        </Button>
-      </DialogTrigger>
+        </button>
+      } />
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edição em Lote</DialogTitle>
