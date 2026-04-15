@@ -348,7 +348,7 @@ function MainApp() {
             <div className="bg-blue-600 p-2 rounded-lg">
               <BarChart3 className="text-white w-6 h-6" />
             </div>
-            <span className="font-bold text-xl tracking-tight text-slate-900">LicenciadorMaster</span>
+            <span className="font-bold text-xl tracking-tight text-slate-900">KaRoyalties</span>
           </div>
 
           <nav className="flex-1 px-4 space-y-1">
@@ -616,7 +616,7 @@ function LoginView() {
           <div className="mx-auto bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
             <BarChart3 className="text-white w-10 h-10" />
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">LicenciadorMaster</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">KaRoyalties</CardTitle>
           <CardDescription className="text-slate-500">Gestão profissional de royalties e contratos</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-4">
@@ -735,7 +735,7 @@ function AddLicensorDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Licenciador
@@ -893,7 +893,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <Button variant="outline" className="gap-2">
           <Upload size={18} /> Importar Linhas
         </Button>
@@ -967,7 +967,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Nova Linha
@@ -1069,7 +1069,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Produto
@@ -1374,7 +1374,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           trigger || (
             <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2">
@@ -2459,7 +2459,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
             <Upload size={18} /> Importar informações
@@ -2704,7 +2704,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
             <Upload size={18} /> Importar Pagamentos
@@ -2916,7 +2916,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <Button variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50">
           <FileSpreadsheet size={18} /> Importar Royalties
         </Button>
@@ -3192,7 +3192,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setStep(1); }}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Contrato
@@ -3779,7 +3779,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Relatório
@@ -3934,7 +3934,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Pagamento
@@ -4689,7 +4689,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
         {isAdmin && reports.length > 0 && (
           <div className="flex items-center gap-2">
             <Dialog>
-              <DialogTrigger nativeButton={false} render={
+              <DialogTrigger nativeButton={true} render={
                 <Button variant="outline" size="sm" className="gap-2 text-red-600 border-red-200 hover:bg-red-50">
                   <Trash2 size={14} /> Limpar Tudo
                 </Button>
@@ -4721,7 +4721,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
             <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
             <Dialog>
-              <DialogTrigger nativeButton={false} render={
+              <DialogTrigger nativeButton={true} render={
                 <Button variant="destructive" size="sm" className="gap-2">
                   <Trash2 size={14} /> Excluir Selecionados
                 </Button>
