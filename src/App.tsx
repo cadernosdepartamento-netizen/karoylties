@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { auth, db, signIn, logOut, registerWithEmail, loginWithEmail } from './firebase';
+import React, { useState, useEffect, Component, ReactNode } from 'react';
+import { auth, db, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { 
@@ -176,8 +176,81 @@ interface Payment {
   status: 'pending' | 'paid';
 }
 
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+// Error Boundary Component
+class ErrorBoundary extends Component<any, any> {
+  state: any;
+  props: any;
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let message = "Ocorreu um erro inesperado.";
+      try {
+        const errObj = JSON.parse(this.state.error.message);
+        if (errObj.error && errObj.error.toLowerCase().includes("permissions")) {
+          message = "Você não tem permissão para realizar esta operação ou acessar estes dados. Verifique se você é um administrador.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+          <Card className="max-w-md w-full border-red-100 shadow-lg">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-red-600 mb-2">
+                <AlertCircle size={28} />
+                <CardTitle className="text-xl">Erro no Aplicativo</CardTitle>
+              </div>
+              <CardDescription>Ocorreu uma falha ao processar sua solicitação.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-red-50 border border-red-100 p-4 rounded-lg mb-6">
+                <p className="text-red-800 text-sm font-medium">{message}</p>
+              </div>
+              <Button onClick={() => window.location.reload()} className="w-full bg-slate-900 hover:bg-slate-800 text-white">
+                Recarregar Página
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
+
+function MainApp() {
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -199,29 +272,50 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      setUserProfile(null);
+      return;
+    }
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      setUserProfile(snap.data());
+    }, (error) => {
+      console.error("Error fetching user profile:", error);
+    });
+    return () => unsub();
+  }, [user]);
+
+  const isAdmin = userProfile?.role === 'admin' || user?.email === 'cadernosdepartamento@gmail.com';
+
+  useEffect(() => {
     if (!user) return;
 
     const unsubLicenses = onSnapshot(collection(db, 'licenses'), (snap) => {
       setLicenses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as License)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'licenses'));
+
     const unsubLines = onSnapshot(collection(db, 'lines'), (snap) => {
       setLines(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Line)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'lines'));
+
     const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'products'));
+
     const unsubProductCategories = onSnapshot(collection(db, 'productCategories'), (snap) => {
       setProductCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductCategory)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'productCategories'));
+
     const unsubContracts = onSnapshot(collection(db, 'contracts'), (snap) => {
       setContracts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contract)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'contracts'));
+
     const unsubReports = onSnapshot(collection(db, 'reports'), (snap) => {
       setReports(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RoyaltyReport)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'reports'));
+
     const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
       setPayments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'payments'));
 
     return () => {
       unsubLicenses();
@@ -313,13 +407,22 @@ export default function App() {
 
           <div className="p-4 border-t border-slate-100">
             <div className="flex items-center gap-3 px-3 py-2 mb-2">
-              <img 
-                src={user.photoURL || ''} 
-                alt={user.displayName || ''} 
-                className="w-8 h-8 rounded-full border border-slate-200"
-              />
+              {user.photoURL ? (
+                <img 
+                  src={user.photoURL} 
+                  alt={user.displayName || ''} 
+                  className="w-8 h-8 rounded-full border border-slate-200"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                  {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">{user.displayName}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-slate-900 truncate">{user.displayName || user.email?.split('@')[0]}</p>
+                  {isAdmin && <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none text-[10px] px-1.5 py-0">Admin</Badge>}
+                </div>
                 <p className="text-xs text-slate-500 truncate">{user.email}</p>
               </div>
             </div>
@@ -355,34 +458,34 @@ export default function App() {
                 />
               </div>
               
-              {activeTab === 'contracts' && (
+              {activeTab === 'contracts' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportContractsDialog licenses={licenses} lines={lines} products={products} />
                   <AddContractDialog licenses={licenses} lines={lines} products={products} contracts={contracts} />
                 </div>
               )}
-              {activeTab === 'reports' && (
+              {activeTab === 'reports' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportReportsDialog contracts={contracts} lines={lines} products={products} licenses={licenses} />
                   <AddReportDialog contracts={contracts} lines={lines} products={products} />
                 </div>
               )}
-              {activeTab === 'payments' && (
+              {activeTab === 'payments' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportPaymentsDialog contracts={contracts} licenses={licenses} />
                   <AddPaymentDialog contracts={contracts} licenses={licenses} />
                 </div>
               )}
-              {activeTab === 'licenses' && (
+              {activeTab === 'licenses' && isAdmin && (
                 <AddLicensorDialog />
               )}
-              {activeTab === 'lines' && (
+              {activeTab === 'lines' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportLinesDialog licenses={licenses} />
                   <AddLineDialog licenses={licenses} />
                 </div>
               )}
-              {activeTab === 'products' && (
+              {activeTab === 'products' && isAdmin && (
                 <AddProductDialog lines={lines} categories={productCategories} licenses={licenses} />
               )}
             </div>
@@ -399,12 +502,12 @@ export default function App() {
                 products={products}
               />
             )}
-            {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} />}
-            {activeTab === 'licenses' && <LicensorsView licenses={licenses} />}
-            {activeTab === 'lines' && <LinesView lines={lines} licenses={licenses} contracts={contracts} products={products} categories={productCategories} />}
-            {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} />}
-            {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} />}
-            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} />}
+            {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} isAdmin={isAdmin} />}
+            {activeTab === 'licenses' && <LicensorsView licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'lines' && <LinesView lines={lines} licenses={licenses} contracts={contracts} products={products} categories={productCategories} isAdmin={isAdmin} />}
+            {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} isAdmin={isAdmin} />}
           </div>
         </main>
         <Toaster />
@@ -632,6 +735,7 @@ function AddLicensorDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Licenciador
@@ -734,17 +838,27 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
         let skippedCount = 0;
 
         for (const row of jsonData) {
-          const licensorName = row["Licenciador"];
-          const lineName = row["Nome da linha"];
-          const brandTypeRaw = row["Tipo de marca"];
-          const statusRaw = row["Status"];
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
+
+          const licensorName = String(getVal(["Licenciador"]) || "").trim();
+          const lineName = String(getVal(["Nome da linha", "Linha"]) || "").trim();
+          const brandTypeRaw = String(getVal(["Tipo de marca", "Tipo"]) || "").trim();
+          const statusRaw = String(getVal(["Status"]) || "").trim();
 
           if (!licensorName || !lineName) {
             skippedCount++;
             continue;
           }
 
-          const license = licenses.find(l => l.fantasyName.toLowerCase() === licensorName.toString().toLowerCase());
+          const license = licenses.find(l => 
+            String(l.fantasyName || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+            String(l.legalName || "").trim().toLowerCase() === licensorName.toLowerCase()
+          );
           if (!license) {
             console.warn(`Licenciador não encontrado: ${licensorName}`);
             skippedCount++;
@@ -779,7 +893,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={
+      <DialogTrigger nativeButton={false} render={
         <Button variant="outline" className="gap-2">
           <Upload size={18} /> Importar Linhas
         </Button>
@@ -853,6 +967,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Nova Linha
@@ -954,6 +1069,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Produto
@@ -1258,6 +1374,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
       <DialogTrigger
+        nativeButton={false}
         render={
           trigger || (
             <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2">
@@ -2243,7 +2360,14 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
 
         for (let i = 0; i < jsonData.length; i++) {
           const row = jsonData[i];
-          const licenseName = row["Licenciador (Nome fantasia)"];
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
+
+          const licenseName = String(getVal(["Licenciador (Nome fantasia)", "Licenciador"]) || "").trim();
           
           if (!licenseName) {
             console.warn(`Linha ${i + 2}: Pulada por falta de 'Licenciador (Nome fantasia)'`);
@@ -2254,50 +2378,59 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
           console.log(`Processando linha ${i + 2}: ${licenseName}`);
 
           try {
-            let license = licenses.find(l => l.fantasyName.toLowerCase() === licenseName.toLowerCase());
+            let license = licenses.find(l => 
+              String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+              String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
+            );
             let licenseId = license?.id;
 
             if (!licenseId) {
               console.log(`Licenciador '${licenseName}' não encontrada. Criando nova...`);
               const newLicenseRef = await addDoc(collection(db, 'licenses'), {
                 fantasyName: licenseName,
-                legalName: row["Licenciador (Nome jurídico)"] || licenseName,
-                agent: row["Administradora/Agente"] || "",
+                legalName: String(getVal(["Licenciador (Nome jurídico)", "Nome Jurídico"]) || licenseName).trim(),
+                agent: String(getVal(["Administradora/Agente", "Agente"]) || "").trim(),
                 createdAt: serverTimestamp()
               });
               licenseId = newLicenseRef.id;
               console.log(`Novo licenciador criado com ID: ${licenseId}`);
             }
 
-            const lineNames = String(row["Linhas Spiral"] || "").split(',').map(s => s.trim()).filter(Boolean);
+            const lineNames = String(getVal(["Linhas Spiral", "Linhas"]) || "").split(',').map(s => s.trim()).filter(Boolean);
             const lineIds = lines
-              .filter(l => lineNames.some(name => l.name.toLowerCase() === name.toLowerCase()))
+              .filter(l => l.licenseId === licenseId && lineNames.some(name => l.name.toLowerCase() === name.toLowerCase()))
               .map(l => l.id);
 
-            const productNames = String(row["Tipos de produtos em contrato"] || "").split(',').map(s => s.trim()).filter(Boolean);
+            const productNames = String(getVal(["Tipos de produtos em contrato", "Produtos"]) || "").split(',').map(s => s.trim()).filter(Boolean);
             const productIds = products
-              .filter(p => productNames.some(name => p.name.toLowerCase() === name.toLowerCase()))
+              .filter(p => p.licenseId === licenseId && productNames.some(name => p.name.toLowerCase() === name.toLowerCase()))
               .map(p => p.id);
 
             const contractData = {
               licenseId,
-              contractNumber: String(row["ID Contrato"] || ""),
-              status: row["Status"] || "Ativo",
-              startDate: parseExcelDate(row["Data de início"]),
-              endDate: parseExcelDate(row["Data de término"]),
-              sellOffPeriod: String(row["Período de sell-off"] || ""),
-              sellOffEndDate: parseExcelDate(row["Data de término sell-off"]),
-              currency: row["Moeda do contrato"] || "BRL",
-              minimumGuarantee: Number(row["Total de mínimo garantido"]) || 0,
-              royaltyRateNetSales1: (Number(row["% royalties vendas"]) || 0) / (Number(row["% royalties vendas"]) > 1 ? 100 : 1),
-              royaltyRateNetPurchases: (Number(row["% royalties Compras"]) || 0) / (Number(row["% royalties Compras"]) > 1 ? 100 : 1),
-              royaltyRateFOB: (Number(row["% royalties FOB"]) || 0) / (Number(row["% royalties FOB"]) > 1 ? 100 : 1),
-              paymentTerms: String(row["Prazo de pagamento de royalites e parcelas de mínimo garantido"] || ""),
-              reportingFrequency: row["Período de apuração de relatório de royalties"] || "Mensal",
+              contractNumber: String(getVal(["ID Contrato", "Contrato"]) || "").trim(),
+              status: String(getVal(["Status"]) || "Ativo").trim(),
+              startDate: parseExcelDate(getVal(["Data de início", "Início"])),
+              endDate: parseExcelDate(getVal(["Data de término", "Término"])),
+              sellOffPeriod: String(getVal(["Período de sell-off", "Sell-off"]) || ""),
+              sellOffEndDate: parseExcelDate(getVal(["Data de término sell-off", "Fim Sell-off"])),
+              currency: String(getVal(["Moeda do contrato", "Moeda"]) || "BRL").trim(),
+              minimumGuarantee: Number(getVal(["Total de mínimo garantido", "MG"])) || 0,
+              royaltyRateNetSales1: (Number(getVal(["% royalties vendas", "Royalty Vendas"])) || 0) / (Number(getVal(["% royalties vendas", "Royalty Vendas"])) > 1 ? 100 : 1),
+              royaltyRateNetPurchases: (Number(getVal(["% royalties Compras", "Royalty Compras"])) || 0) / (Number(getVal(["% royalties Compras", "Royalty Compras"])) > 1 ? 100 : 1),
+              royaltyRateFOB: (Number(getVal(["% royalties FOB", "Royalty FOB"])) || 0) / (Number(getVal(["% royalties FOB", "Royalty FOB"])) > 1 ? 100 : 1),
+              paymentTerms: String(getVal(["Prazo de pagamento de royalites e parcelas de mínimo garantido", "Prazo Pagamento"]) || ""),
+              reportingFrequency: String(getVal(["Período de apuração de relatório de royalties", "Frequência Relatório"]) || "Mensal"),
               lineIds,
               productIds,
               createdAt: serverTimestamp()
             };
+            
+            if (!contractData.contractNumber) {
+              console.warn(`Linha ${i + 2}: Pulada por falta de 'ID Contrato'`);
+              skippedCount++;
+              continue;
+            }
 
             await addDoc(collection(db, 'contracts'), contractData);
             importedCount++;
@@ -2326,6 +2459,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
             <Upload size={18} /> Importar informações
@@ -2480,8 +2614,15 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
 
         for (let i = 0; i < jsonData.length; i++) {
           const row = jsonData[i];
-          const licenseName = row["Licenciador"];
-          const contractNum = row["Contrato"];
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
+
+          const licenseName = String(getVal(["Licenciador"]) || "").trim();
+          const contractNum = String(getVal(["Contrato"]) || "").trim();
           
           if (!licenseName || !contractNum) {
             skippedCount++;
@@ -2489,8 +2630,14 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
           }
 
           try {
-            const license = licenses.find(l => l.fantasyName.toLowerCase() === String(licenseName).toLowerCase());
-            const contract = contracts.find(c => String(c.contractNumber).toLowerCase() === String(contractNum).toLowerCase());
+            const license = licenses.find(l => 
+              String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+              String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
+            );
+            const contract = contracts.find(c => 
+              String(c.contractNumber || "").trim().toLowerCase() === contractNum.toLowerCase() &&
+              (license ? c.licenseId === license.id : true)
+            );
 
             if (!license || !contract) {
               skippedCount++;
@@ -2513,23 +2660,23 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
             };
 
             const paymentData = {
-              responsible: String(row["Responsável"] || ""),
-              receiptDate: parseExcelDate(row["Data Recebimento"]),
-              paymentRequestDate: parseExcelDate(row["Data Solicitação Pagto"]),
-              type: typeMap[row["Tipo"]] || "mg",
+              responsible: String(getVal(["Responsável"]) || "").trim(),
+              receiptDate: parseExcelDate(getVal(["Data Recebimento"])),
+              paymentRequestDate: parseExcelDate(getVal(["Data Solicitação Pagto"])),
+              type: typeMap[String(getVal(["Tipo"]) || "")] || "mg",
               licenseId: license.id,
               contractId: contract.id,
-              identification: String(row["Identificação"] || ""),
-              dueDate: parseExcelDate(row["Data de Vencimento"]),
-              date: parseExcelDate(row["Data Pagamento"]),
-              currency: String(row["Moeda"] || "BRL"),
-              amount: Number(row["Valor"]) || 0,
-              paymentOrder: String(row["Ordem de Pagamento"] || ""),
-              invoice: String(row["Invoice / NF"] || ""),
-              notes: String(row["Observações"] || ""),
-              year: String(row["Ano"] || ""),
-              installmentNumber: String(row["Parcela"] || ""),
-              status: statusMap[row["Status"]] || "paid",
+              identification: String(getVal(["Identificação"]) || "").trim(),
+              dueDate: parseExcelDate(getVal(["Data de Vencimento"])),
+              date: parseExcelDate(getVal(["Data Pagamento"])),
+              currency: String(getVal(["Moeda do contrato", "Moeda"]) || "BRL").trim(),
+              amount: Number(getVal(["Valor", "Montante"])) || 0,
+              paymentOrder: String(getVal(["Ordem de Pagamento", "OP"]) || "").trim(),
+              invoice: String(getVal(["Invoice / NF", "NF", "Nota Fiscal", "Fatura"]) || "").trim(),
+              notes: String(getVal(["Observações", "Notas"]) || "").trim(),
+              year: String(getVal(["Ano"]) || ""),
+              installmentNumber: String(getVal(["Parcela"]) || ""),
+              status: statusMap[String(getVal(["Status"]) || "")] || "paid",
               createdAt: serverTimestamp()
             };
 
@@ -2557,6 +2704,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
             <Upload size={18} /> Importar Pagamentos
@@ -2671,21 +2819,53 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
         let skippedCount = 0;
 
         for (const row of jsonData) {
-          const licenseName = row["Licenciador"];
-          const lineName = row["Linha"];
-          const contractNum = row["Contrato"];
-          const productName = row["Produto"];
-          const sku = row["Código"];
+          // Helper to get value from row with flexible header matching
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
 
-          const license = licenses.find(l => String(l.fantasyName).toLowerCase() === String(licenseName || "").toLowerCase());
-          const line = lines.find(l => String(l.name).toLowerCase() === String(lineName || "").toLowerCase());
-          const contract = contracts.find(c => String(c.contractNumber).toLowerCase() === String(contractNum || "").toLowerCase());
-          const product = products.find(p => 
-            (sku && String(p.sku).toLowerCase() === String(sku).toLowerCase()) || 
-            (productName && String(p.name).toLowerCase() === String(productName).toLowerCase())
+          const licenseName = String(getVal(["Licenciador"]) || "").trim();
+          const lineName = String(getVal(["Linha"]) || "").trim();
+          const contractNum = String(getVal(["Contrato"]) || "").trim();
+          const productName = String(getVal(["Produto"]) || "").trim();
+          const sku = String(getVal(["Código", "SKU"]) || "").trim();
+          const month = Number(getVal(["Mês"])) || 0;
+          const year = Number(getVal(["Ano"])) || 0;
+          const quantity = Number(getVal(["Qtd", "Quantidade"])) || 0;
+          const netValue = Number(getVal(["Vlr_Total", "Total Líquido", "Valor Total"])) || 0;
+          const royaltyValue = Number(getVal(["Royalties", "Valor Royalties"])) || 0;
+
+          const license = licenses.find(l => 
+            String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+            String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
           );
 
+          const line = lines.find(l => 
+            String(l.name || "").trim().toLowerCase() === lineName.toLowerCase() &&
+            (license ? l.licenseId === license.id : true)
+          );
+
+          const contract = contracts.find(c => 
+            String(c.contractNumber || "").trim().toLowerCase() === contractNum.toLowerCase() &&
+            (license ? c.licenseId === license.id : true)
+          );
+
+          const product = products.find(p => 
+            (sku && String(p.sku || "").trim().toLowerCase() === sku.toLowerCase()) || 
+            (productName && String(p.name || "").trim().toLowerCase() === productName.toLowerCase())
+          );
+
+          if (!license) {
+            console.warn(`Licenciador não encontrado: "${licenseName}"`);
+            skippedCount++;
+            continue;
+          }
+
           if (!contract || !line) {
+            console.warn(`Contrato ("${contractNum}") ou Linha ("${lineName}") não encontrados para o licenciador "${licenseName}"`);
             skippedCount++;
             continue;
           }
@@ -2694,32 +2874,33 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
             contractId: contract.id,
             lineId: line.id,
             productId: product?.id || 'Geral',
-            month: Number(row["Mês"]) || 0,
-            year: Number(row["Ano"]) || 0,
-            quantity: Number(row["Qtd"]) || 0,
-            netValue: Number(row["Vlr_Total"]) || Number(row["Total Líquido"]) || 0,
-            royaltyValue: Number(row["Royalties"]) || 0,
-            icms: Number(row["ICMS"]) || 0,
-            pis: Number(row["Pis"]) || 0,
-            cofins: Number(row["Cofins"]) || 0,
-            ipi: Number(row["IPI"]) || 0,
-            codBarras: String(row["Cod_Barras"] || ""),
-            reportType: String(row["Tipo de relatório"] || ""),
-            fileName: String(row["Nome arquivo"] || ""),
-            category: String(row["Categoria"] || ""),
-            anoVA: String(row["Ano VA"] || ""),
-            costPrice: Number(row["Preço de custo"]) || 0,
-            cmf: String(row["CMF"] || ""),
-            contractYear: String(row["Ano contrato"] || ""),
-            currencyRate: String(row["Taxa moeda"] || ""),
+            month,
+            year,
+            quantity,
+            netValue,
+            royaltyValue,
+            icms: Number(getVal(["ICMS"])) || 0,
+            pis: Number(getVal(["Pis"])) || 0,
+            cofins: Number(getVal(["Cofins"])) || 0,
+            ipi: Number(getVal(["IPI"])) || 0,
+            codBarras: String(getVal(["Cod_Barras", "Código de Barras"]) || ""),
+            reportType: String(getVal(["Tipo de relatório"]) || ""),
+            fileName: String(getVal(["Nome arquivo"]) || ""),
+            category: String(getVal(["Categoria"]) || ""),
+            anoVA: String(getVal(["Ano VA"]) || ""),
+            costPrice: Number(getVal(["Preço de custo"])) || 0,
+            cmf: String(getVal(["CMF"]) || ""),
+            contractYear: String(getVal(["Ano contrato"]) || ""),
+            currencyRate: String(getVal(["Taxa moeda"]) || ""),
             createdAt: serverTimestamp()
           });
           importedCount++;
         }
 
-        toast.success(`${importedCount} registros importados com sucesso!`);
         if (skippedCount > 0) {
-          toast.info(`${skippedCount} registros ignorados (Contrato ou Linha não encontrados).`);
+          toast.warning(`${importedCount} registros importados, ${skippedCount} ignorados por inconsistência (verifique o console para detalhes).`);
+        } else {
+          toast.success(`${importedCount} registros importados com sucesso!`);
         }
         setOpen(false);
         setFile(null);
@@ -2735,7 +2916,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={
+      <DialogTrigger nativeButton={false} render={
         <Button variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50">
           <FileSpreadsheet size={18} /> Importar Royalties
         </Button>
@@ -3011,6 +3192,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setStep(1); }}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Contrato
@@ -3597,6 +3779,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Relatório
@@ -3751,6 +3934,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
             <Plus size={18} /> Novo Pagamento
@@ -4155,7 +4339,14 @@ function StatCard({ title, value, icon, trend, color }: any) {
   );
 }
 
-function ContractsView({ contracts, licenses, reports, lines, products }: any) {
+function ContractsView({ contracts, licenses, reports, lines, products, isAdmin }: { 
+  contracts: Contract[], 
+  licenses: License[], 
+  reports: RoyaltyReport[], 
+  lines: Line[], 
+  products: Product[],
+  isAdmin: boolean
+}) {
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' | null }>({ key: 'license', direction: 'asc' });
 
@@ -4408,7 +4599,14 @@ function ContractsView({ contracts, licenses, reports, lines, products }: any) {
   );
 }
 
-function ReportsView({ reports, contracts, lines, products, licenses }: any) {
+function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }: {
+  reports: RoyaltyReport[],
+  contracts: Contract[],
+  lines: Line[],
+  products: Product[],
+  licenses: License[],
+  isAdmin: boolean
+}) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const groupedReports = React.useMemo(() => {
@@ -4488,11 +4686,42 @@ function ReportsView({ reports, contracts, lines, products, licenses }: any) {
           <CardTitle>Royalties</CardTitle>
           <CardDescription>Histórico de vendas e royalties reportados mensalmente</CardDescription>
         </div>
+        {isAdmin && reports.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Dialog>
+              <DialogTrigger nativeButton={false} render={
+                <Button variant="outline" size="sm" className="gap-2 text-red-600 border-red-200 hover:bg-red-50">
+                  <Trash2 size={14} /> Limpar Tudo
+                </Button>
+              } />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Limpar Todos os Registros</DialogTitle>
+                  <DialogDescription>
+                    Isso excluirá permanentemente TODOS os {reports.length} registros de royalties do banco de dados. Esta ação não pode ser desfeita.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => {}}>Cancelar</Button>
+                  <Button variant="destructive" onClick={async () => {
+                    try {
+                      const promises = reports.map((r: any) => deleteDoc(doc(db, 'reports', r.id)));
+                      await Promise.all(promises);
+                      toast.success("Todos os registros foram excluídos!");
+                    } catch (err) {
+                      toast.error("Erro ao excluir registros.");
+                    }
+                  }}>Confirmar Exclusão Total</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
         {selectedIds.length > 0 && (
           <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
             <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
             <Dialog>
-              <DialogTrigger render={
+              <DialogTrigger nativeButton={false} render={
                 <Button variant="destructive" size="sm" className="gap-2">
                   <Trash2 size={14} /> Excluir Selecionados
                 </Button>
@@ -4543,7 +4772,7 @@ function ReportsView({ reports, contracts, lines, products, licenses }: any) {
                 <th className="px-2 py-3">Preço de custo</th>
                 <th className="px-2 py-3">CMF</th>
                 <th className="px-2 py-3">ID Licenciador</th>
-                <th className="px-2 py-3 text-right">Ações</th>
+                {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -4568,25 +4797,27 @@ function ReportsView({ reports, contracts, lines, products, licenses }: any) {
                     <td className="px-2 py-4 text-slate-600">{report.year}</td>
                     <td className="px-2 py-4 text-slate-600">{report.month}</td>
                     <td className="px-2 py-4 text-slate-600">{report.quantity}</td>
-                    <td className="px-2 py-4 text-slate-600">{symbol} {report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-2 py-4 text-slate-600">{report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     <td className="px-2 py-4 text-slate-600">{report.icms?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.pis?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.cofins?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.ipi?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
-                    <td className="px-2 py-4 text-slate-600">{symbol} {report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-4 font-semibold text-emerald-600">{symbol} {report.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-2 py-4 text-slate-600">{report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-2 py-4 font-semibold text-emerald-600">{report.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     <td className="px-2 py-4 text-slate-600">{report.category || line?.productCategories?.join(', ') || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.anoVA || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.costPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.cmf || '-'}</td>
                     <td className="px-2 py-4 text-slate-600 text-[8px]">{contract?.licenseId || '-'}</td>
-                    <td className="px-2 py-4 text-right">
-                      <div className="flex justify-end items-center gap-1">
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600 h-6 w-6 p-0">
-                          <Settings size={12} />
-                        </Button>
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-2 py-4 text-right">
+                        <div className="flex justify-end items-center gap-1">
+                          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600 h-6 w-6 p-0">
+                            <Settings size={12} />
+                          </Button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -4674,6 +4905,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
             <Settings size={16} />
@@ -4854,7 +5086,12 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   );
 }
 
-function PaymentsView({ payments, contracts, licenses }: any) {
+function PaymentsView({ payments, contracts, licenses, isAdmin }: {
+  payments: Payment[],
+  contracts: Contract[],
+  licenses: License[],
+  isAdmin: boolean
+}) {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
   const requestSort = (key: string) => {
@@ -4966,7 +5203,7 @@ function PaymentsView({ payments, contracts, licenses }: any) {
                 <SortableHeader label="Ano" sortKey="year" />
                 <SortableHeader label="Parcela" sortKey="installmentNumber" />
                 <SortableHeader label="Status" sortKey="status" />
-                <th className="px-2 py-3 text-right">Ações</th>
+                {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -5014,21 +5251,23 @@ function PaymentsView({ payments, contracts, licenses }: any) {
                         <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none text-[8px] font-bold">PENDENTE</Badge>
                       )}
                     </td>
-                    <td className="px-2 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {payment.status === 'pending' && (
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-6 px-1 text-[9px]"
-                            onClick={() => handleConfirmPayment(payment.id)}
-                          >
-                            Confirmar
-                          </Button>
-                        )}
-                        <EditPaymentDialog payment={payment} contracts={contracts} licenses={licenses} />
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-2 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {payment.status === 'pending' && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-6 px-1 text-[9px]"
+                              onClick={() => handleConfirmPayment(payment.id)}
+                            >
+                              Confirmar
+                            </Button>
+                          )}
+                          <EditPaymentDialog payment={payment} contracts={contracts} licenses={licenses} />
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -5073,6 +5312,7 @@ function EditLicensorDialog({ license }: { license: License }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        nativeButton={false}
         render={
           <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
             <Settings size={16} />
@@ -5110,7 +5350,7 @@ function EditLicensorDialog({ license }: { license: License }) {
   );
 }
 
-function LicensorsView({ licenses }: { licenses: License[] }) {
+function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: boolean }) {
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between">
@@ -5127,7 +5367,7 @@ function LicensorsView({ licenses }: { licenses: License[] }) {
                 <th className="px-4 py-3">Nome Fantasia</th>
                 <th className="px-4 py-3">Nome Jurídico</th>
                 <th className="px-4 py-3">Agentes</th>
-                <th className="px-4 py-3 text-right">Ações</th>
+                {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -5136,9 +5376,11 @@ function LicensorsView({ licenses }: { licenses: License[] }) {
                   <td className="px-4 py-4 font-medium text-slate-900">{license.fantasyName}</td>
                   <td className="px-4 py-4 text-slate-600">{license.legalName}</td>
                   <td className="px-4 py-4 text-blue-600 font-medium">{license.agent || '-'}</td>
-                  <td className="px-4 py-4 text-right">
-                    <EditLicensorDialog license={license} />
-                  </td>
+                  {isAdmin && (
+                    <td className="px-4 py-4 text-right">
+                      <EditLicensorDialog license={license} />
+                    </td>
+                  )}
                 </tr>
               ))}
               {licenses.length === 0 && (
@@ -5332,7 +5574,7 @@ function DeleteReportDialog({ reportId }: { reportId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={
+      <DialogTrigger nativeButton={false} render={
         <Button 
           variant="ghost" 
           size="sm" 
@@ -5372,7 +5614,7 @@ function DeleteLineDialog({ lineId, lineName }: { lineId: string, lineName: stri
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={
+      <DialogTrigger nativeButton={false} render={
         <Button 
           variant="ghost" 
           size="icon-sm" 
@@ -5397,7 +5639,7 @@ function DeleteLineDialog({ lineId, lineName }: { lineId: string, lineName: stri
   );
 }
 
-function LinesView({ lines, licenses, contracts, products, categories }: { lines: Line[], licenses: License[], contracts: Contract[], products: Product[], categories: ProductCategory[] }) {
+function LinesView({ lines, licenses, contracts, products, categories, isAdmin }: { lines: Line[], licenses: License[], contracts: Contract[], products: Product[], categories: ProductCategory[], isAdmin: boolean }) {
   const [collapsedLicenses, setCollapsedLicenses] = useState<Record<string, boolean>>({});
 
   const toggleLicense = (licenseId: string) => {
@@ -5503,18 +5745,20 @@ function LinesView({ lines, licenses, contracts, products, categories }: { lines
                             {line.status || 'N/A'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end items-center gap-1">
-                            <EditLineDialog 
-                              line={line} 
-                              licenses={licenses} 
-                              contracts={contracts} 
-                              products={products} 
-                              categories={categories} 
-                            />
-                            <DeleteLineDialog lineId={line.id} lineName={line.name} />
-                          </div>
-                        </TableCell>
+                        {isAdmin && (
+                          <TableCell className="text-right">
+                            <div className="flex justify-end items-center gap-1">
+                              <EditLineDialog 
+                                line={line} 
+                                licenses={licenses} 
+                                contracts={contracts} 
+                                products={products} 
+                                categories={categories} 
+                              />
+                              <DeleteLineDialog lineId={line.id} lineName={line.name} />
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </React.Fragment>
@@ -5582,7 +5826,7 @@ function ProductCategoriesView({ categories }: { categories: ProductCategory[] }
   );
 }
 
-function ProductsView({ products, lines, categories, licenses }: { products: Product[], lines: Line[], categories: ProductCategory[], licenses: License[] }) {
+function ProductsView({ products, lines, categories, licenses, isAdmin }: { products: Product[], lines: Line[], categories: ProductCategory[], licenses: License[], isAdmin: boolean }) {
   return (
     <div className="space-y-8">
       <Card className="border-slate-200 shadow-sm">
@@ -5605,7 +5849,7 @@ function ProductsView({ products, lines, categories, licenses }: { products: Pro
                   <th className="px-4 py-3">Licenciador</th>
                   <th className="px-4 py-3">Ano</th>
                   <th className="px-4 py-3">EAN</th>
-                  <th className="px-4 py-3 text-right">Ações</th>
+                  {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -5613,13 +5857,22 @@ function ProductsView({ products, lines, categories, licenses }: { products: Pro
                   const line = lines.find(l => l.id === product.lineId);
                   const category = categories.find(c => c.id === product.categoryId);
                   const license = licenses.find(l => l.id === (product.licenseId || line?.licenseId));
-                  const imageUrl = product.sku ? `https://img.kalunga.com.br/FotosdeProdutos/${product.sku}.jpg` : '';
+                  const imageUrl = (product.sku && product.sku.trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${product.sku.trim()}.jpg` : null;
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-2">
                         {imageUrl ? (
-                          <img src={imageUrl} alt={product.name} className="w-12 h-12 object-cover rounded border border-slate-200" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = 'https://placehold.co/100x100?text=Sem+Imagem' }} />
+                          <img 
+                            src={imageUrl} 
+                            alt={product.name} 
+                            className="w-12 h-12 object-cover rounded border border-slate-200" 
+                            referrerPolicy="no-referrer" 
+                            onError={(e) => { 
+                              e.currentTarget.src = 'https://placehold.co/100x100?text=Sem+Imagem';
+                              e.currentTarget.onerror = null; // Prevent infinite loop if placeholder also fails
+                            }} 
+                          />
                         ) : (
                           <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-xs text-slate-400">N/A</div>
                         )}
@@ -5631,11 +5884,13 @@ function ProductsView({ products, lines, categories, licenses }: { products: Pro
                       <td className="px-4 py-4 text-slate-600">{license?.fantasyName || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{product.launchYear || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
-                      <td className="px-4 py-4 text-right">
-                        <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
-                          <Settings size={16} />
-                        </Button>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-4 py-4 text-right">
+                          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
+                            <Settings size={16} />
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
