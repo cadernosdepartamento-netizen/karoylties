@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { auth, db, signIn, logOut } from './firebase';
+import { auth, db, signIn, logOut, registerWithEmail, loginWithEmail } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { 
@@ -243,30 +243,7 @@ export default function App() {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <Card className="max-w-md w-full shadow-xl border-none">
-          <CardHeader className="text-center space-y-2">
-            <div className="mx-auto bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
-              <BarChart3 className="text-white w-10 h-10" />
-            </div>
-            <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">LicenciadorMaster</CardTitle>
-            <CardDescription className="text-slate-500">Gestão profissional de royalties e contratos</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-4">
-            <Button 
-              onClick={signIn} 
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12 text-lg font-medium rounded-xl transition-all active:scale-95"
-            >
-              Entrar com Google
-            </Button>
-            <p className="text-center text-xs text-slate-400">
-              Acesso restrito a administradores autorizados.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <LoginView />;
   }
 
   return (
@@ -505,6 +482,107 @@ const getContractStatus = (contract: any) => {
   return { label: 'Indefinido', color: 'bg-slate-100 text-slate-700 hover:bg-slate-100 border-none' };
 };
 
+function LoginView() {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (isRegistering) {
+        await registerWithEmail(email, password);
+        toast.success('Conta criada com sucesso!');
+      } else {
+        await loginWithEmail(email, password);
+        toast.success('Bem-vindo de volta!');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro na autenticação');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <Card className="max-w-md w-full shadow-xl border-none">
+        <CardHeader className="text-center space-y-2">
+          <div className="mx-auto bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-200">
+            <BarChart3 className="text-white w-10 h-10" />
+          </div>
+          <CardTitle className="text-3xl font-bold tracking-tight text-slate-900">LicenciadorMaster</CardTitle>
+          <CardDescription className="text-slate-500">Gestão profissional de royalties e contratos</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 pt-4">
+          <form onSubmit={handleEmailAuth} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail Corporativo</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="seu.nome@kalunga.com.br" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <p className="text-[10px] text-slate-400 italic">Obrigatório domínio @kalunga.com.br</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Senha</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            <Button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 font-medium rounded-xl transition-all"
+            >
+              {loading ? 'Aguarde...' : (isRegistering ? 'Criar Conta' : 'Entrar')}
+            </Button>
+          </form>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-slate-200"></span>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-slate-400">Ou</span>
+            </div>
+          </div>
+
+          <Button 
+            variant="outline"
+            onClick={signIn} 
+            className="w-full border-slate-200 hover:bg-slate-50 text-slate-600 h-11 font-medium rounded-xl transition-all"
+          >
+            Entrar com Google
+          </Button>
+
+          <div className="text-center">
+            <button 
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="text-sm text-blue-600 hover:underline font-medium"
+            >
+              {isRegistering ? 'Já tem uma conta? Entre aqui' : 'Não tem conta? Cadastre-se (@kalunga)'}
+            </button>
+          </div>
+
+          <p className="text-center text-xs text-slate-400">
+            Acesso restrito a administradores autorizados.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
   return (
     <button

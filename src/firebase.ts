@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer, serverTimestamp } from 'firebase/firestore';
 
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -11,6 +11,22 @@ export const googleProvider = new GoogleAuthProvider();
 
 export const signIn = () => signInWithPopup(auth, googleProvider);
 export const logOut = () => signOut(auth);
+
+export const registerWithEmail = async (email: string, pass: string) => {
+  if (!email.endsWith('@kalunga.com.br')) {
+    throw new Error('Apenas e-mails @kalunga.com.br são permitidos.');
+  }
+  const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+  // Create user profile in firestore
+  await setDoc(doc(db, 'users', userCredential.user.uid), {
+    email,
+    role: 'user',
+    createdAt: serverTimestamp()
+  });
+  return userCredential;
+};
+
+export const loginWithEmail = (email: string, pass: string) => signInWithEmailAndPassword(auth, email, pass);
 
 // Error handling helper
 export enum OperationType {
