@@ -6038,6 +6038,15 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   const [filterYear, setFilterYear] = useState<string>('all');
   
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'sku', direction: 'asc' });
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const filteredProducts = products.filter(product => {
     const line = lines.find(l => l.id === product.lineId);
@@ -6049,6 +6058,35 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     if (filterYear !== 'all' && String(product.launchYear) !== filterYear) return false;
     
     return true;
+  });
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    let valA: any = a[sortConfig.key as keyof Product];
+    let valB: any = b[sortConfig.key as keyof Product];
+
+    if (sortConfig.key === 'category') {
+      valA = categories.find(c => c.id === a.categoryId)?.name || '';
+      valB = categories.find(c => c.id === b.categoryId)?.name || '';
+    } else if (sortConfig.key === 'line') {
+      valA = lines.find(l => l.id === a.lineId)?.name || '';
+      valB = lines.find(l => l.id === b.lineId)?.name || '';
+    } else if (sortConfig.key === 'license') {
+      const lineA = lines.find(l => l.id === a.lineId);
+      const lineB = lines.find(l => l.id === b.lineId);
+      valA = licenses.find(l => l.id === (a.licenseId || lineA?.licenseId))?.fantasyName || '';
+      valB = licenses.find(l => l.id === (b.licenseId || lineB?.licenseId))?.fantasyName || '';
+    }
+
+    if (valA === undefined || valA === null) valA = '';
+    if (valB === undefined || valB === null) valB = '';
+
+    if (valA < valB) {
+      return sortConfig.direction === 'asc' ? -1 : 1;
+    }
+    if (valA > valB) {
+      return sortConfig.direction === 'asc' ? 1 : -1;
+    }
+    return 0;
   });
 
   const uniqueYears = Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))).sort();
@@ -6194,18 +6232,32 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                     </th>
                   )}
                   <th className="px-4 py-3 w-16">Imagem</th>
-                  <th className="px-4 py-3">Código</th>
-                  <th className="px-4 py-3">Nome</th>
-                  <th className="px-4 py-3">Categoria</th>
-                  <th className="px-4 py-3">Linha</th>
-                  <th className="px-4 py-3">Licenciador</th>
-                  <th className="px-4 py-3">Ano</th>
-                  <th className="px-4 py-3">EAN</th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('sku')}>
+                    <div className="flex items-center gap-1">Código {sortConfig.key === 'sku' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('name')}>
+                    <div className="flex items-center gap-1">Nome {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('category')}>
+                    <div className="flex items-center gap-1">Categoria {sortConfig.key === 'category' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('line')}>
+                    <div className="flex items-center gap-1">Linha {sortConfig.key === 'line' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('license')}>
+                    <div className="flex items-center gap-1">Licenciador {sortConfig.key === 'license' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('launchYear')}>
+                    <div className="flex items-center gap-1">Ano {sortConfig.key === 'launchYear' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('ean')}>
+                    <div className="flex items-center gap-1">EAN {sortConfig.key === 'ean' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
+                  </th>
                   {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredProducts.map((product) => {
+                {sortedProducts.map((product) => {
                   const line = lines.find(l => l.id === product.lineId);
                   const category = categories.find(c => c.id === product.categoryId);
                   const license = licenses.find(l => l.id === (product.licenseId || line?.licenseId));
