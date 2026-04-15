@@ -1,0 +1,117 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: licenses
+// Fields:
+//   - fantasyName: string (required)
+//   - legalName: string (required)
+//   - agent: string (optional)
+//   - description: string (optional)
+//
+// Collection: lines
+// Fields:
+//   - licenseId: string (required) - Reference to licenses
+//   - name: string (required)
+//
+// Collection: products
+// Fields:
+//   - lineId: string (required) - Reference to lines
+//   - name: string (required)
+//   - sku: string (optional)
+//
+// Collection: contracts
+// Fields:
+//   - licenseId: string (required)
+//   - contractNumber: string (optional)
+//   - royaltyRate: number (required)
+//   - minimumGuarantee: number (required)
+//   - startDate: string (required, ISO 8601)
+//   - endDate: string (required, ISO 8601)
+//   - lineIds: list (required)
+//   - productIds: list (required)
+//   - status: string (required)
+//   - currency: string (required)
+//
+// Collection: reports
+// Fields:
+//   - contractId: string (required)
+//   - lineId: string (required)
+//   - productId: string (required)
+//   - month: number (required, 1-12)
+//   - year: number (required)
+//   - quantity: number (required)
+//   - netValue: number (required)
+//   - royaltyValue: number (required)
+//
+// Collection: payments
+// Fields:
+//   - contractId: string (required)
+//   - type: string (required, 'mg' | 'excess')
+//   - amount: number (required)
+//   - date: string (required, ISO 8601)
+//   - status: string (required, 'pending' | 'paid')
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "cadernosdepartamento@gmail.com");
+    }
+
+    // Rules
+    match /licenses/{licenseId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /lines/{lineId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /productCategories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /contracts/{contractId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+  }
+}

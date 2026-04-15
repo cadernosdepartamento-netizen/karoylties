@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "License": {
+      "title": "Licença",
+      "description": "Empresa ou entidade licenciadora.",
+      "type": "object",
+      "properties": {
+        "fantasyName": { "type": "string", "description": "Licenciador (Nome fantasia)" },
+        "legalName": { "type": "string", "description": "Licenciador (Nome jurídico)" },
+        "agent": { "type": "string", "description": "Administradora/Agente" },
+        "description": { "type": "string", "description": "Descrição opcional" }
+      },
+      "required": ["fantasyName", "legalName"]
+    },
+    "Line": {
+      "title": "Linha",
+      "description": "Linha ou marca específica dentro de uma licença.",
+      "type": "object",
+      "properties": {
+        "licenseId": { "type": "string", "description": "ID da licença pai" },
+        "name": { "type": "string", "description": "Nome da linha/marca" }
+      },
+      "required": ["licenseId", "name"]
+    },
+    "Product": {
+      "title": "Produto",
+      "description": "Produto específico vinculado a uma linha.",
+      "type": "object",
+      "properties": {
+        "lineId": { "type": "string", "description": "ID da linha pai" },
+        "name": { "type": "string", "description": "Nome do produto" },
+        "sku": { "type": "string", "description": "Código SKU (opcional)" }
+      },
+      "required": ["lineId", "name"]
+    },
+    "Contract": {
+      "title": "Contrato",
+      "description": "Contrato de licenciamento com termos financeiros e de prazo.",
+      "type": "object",
+      "properties": {
+        "licenseId": { "type": "string", "description": "ID da licença" },
+        "contractNumber": { "type": "string", "description": "Número do Contrato" },
+        "royaltyRate": { "type": "number", "description": "Taxa de royalties (%)" },
+        "minimumGuarantee": { "type": "number", "description": "Valor do mínimo garantido total" },
+        "startDate": { "type": "string", "format": "date", "description": "Data de início" },
+        "endDate": { "type": "string", "format": "date", "description": "Data de término" },
+        "paymentTerms": { "type": "string", "description": "Condição de Pagamento (MG)" },
+        "reportingFrequency": { "type": "string", "description": "Periodicidade de Relatórios" },
+        "status": { "type": "string", "enum": ["Ativo", "Encerrado", "Suspenso"], "description": "Status do contrato" },
+        "sellOffPeriod": { "type": "string", "description": "Período sell-off" },
+        "sellOffEndDate": { "type": "string", "format": "date", "description": "Data final sell-off" },
+        "currency": { "type": "string", "description": "Moeda" },
+        "royaltyRateNetSales1": { "type": "number", "description": "%Royalties vendas líquidas 1" },
+        "royaltyRateNetSales2": { "type": "number", "description": "%Royalties vendas líquidas 2" },
+        "royaltyRateNetPurchases": { "type": "number", "description": "%Royalties compras líquidas" },
+        "royaltyRateFOB": { "type": "number", "description": "%Royalties FOB" },
+        "products": { "type": "array", "description": "Lista de produtos cobertos" },
+        "propertyIds": { "type": "array", "description": "IDs das propriedades vinculadas" }
+      },
+      "required": ["licenseId", "royaltyRate", "minimumGuarantee", "startDate", "endDate"]
+    },
+    "RoyaltyReport": {
+      "title": "Relatório de Royalties",
+      "description": "Relatório mensal de vendas e royalties auferidos.",
+      "type": "object",
+      "properties": {
+        "contractId": { "type": "string", "description": "ID do contrato" },
+        "propertyId": { "type": "string", "description": "ID da propriedade" },
+        "month": { "type": "number", "description": "Mês (1-12)" },
+        "year": { "type": "number", "description": "Ano" },
+        "quantity": { "type": "number", "description": "Quantidade vendida" },
+        "netValue": { "type": "number", "description": "Valor líquido das vendas" },
+        "royaltyValue": { "type": "number", "description": "Valor de royalties calculado" },
+        "productName": { "type": "string", "description": "Nome do produto individual" }
+      },
+      "required": ["contractId", "propertyId", "month", "year", "quantity", "netValue", "royaltyValue"]
+    },
+    "Payment": {
+      "title": "Pagamento",
+      "description": "Registro de pagamentos efetuados (MG ou Royalties Excedentes).",
+      "type": "object",
+      "properties": {
+        "contractId": { "type": "string", "description": "ID do contrato" },
+        "type": { "type": "string", "enum": ["mg", "excess"], "description": "Tipo de pagamento" },
+        "amount": { "type": "number", "description": "Valor pago" },
+        "date": { "type": "string", "format": "date", "description": "Data do pagamento" },
+        "status": { "type": "string", "enum": ["pending", "paid"], "description": "Status do pagamento" }
+      },
+      "required": ["contractId", "type", "amount", "date", "status"]
+    }
+  },
+  "firestore": {
+    "/licenses": { "schema": "License", "description": "Coleção de licenças" },
+    "/lines": { "schema": "Line", "description": "Coleção de linhas/marcas" },
+    "/products": { "schema": "Product", "description": "Coleção de produtos" },
+    "/contracts": { "schema": "Contract", "description": "Coleção de contratos" },
+    "/reports": { "schema": "RoyaltyReport", "description": "Coleção de relatórios mensais" },
+    "/payments": { "schema": "Payment", "description": "Coleção de pagamentos" }
+  }
+}
