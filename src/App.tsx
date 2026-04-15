@@ -66,6 +66,8 @@ import {
 } from '@/components/ui/table';
 
 import { SettingsView } from './components/SettingsView';
+import { EditProductDialog } from './components/EditProductDialog';
+import { BatchEditProductsDialog } from './components/BatchEditProductsDialog';
 
 // Types
 interface License { 
@@ -6030,6 +6032,66 @@ function ProductCategoriesView({ categories }: { categories: ProductCategory[] }
 }
 
 function ProductsView({ products, lines, categories, licenses, isAdmin }: { products: Product[], lines: Line[], categories: ProductCategory[], licenses: License[], isAdmin: boolean }) {
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterLine, setFilterLine] = useState<string>('all');
+  const [filterLicense, setFilterLicense] = useState<string>('all');
+  const [filterYear, setFilterYear] = useState<string>('all');
+  
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+
+  const filteredProducts = products.filter(product => {
+    const line = lines.find(l => l.id === product.lineId);
+    const licenseId = product.licenseId || line?.licenseId;
+    
+    if (filterCategory !== 'all' && product.categoryId !== filterCategory) return false;
+    if (filterLine !== 'all' && product.lineId !== filterLine) return false;
+    if (filterLicense !== 'all' && licenseId !== filterLicense) return false;
+    if (filterYear !== 'all' && String(product.launchYear) !== filterYear) return false;
+    
+    return true;
+  });
+
+  const uniqueYears = Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))).sort();
+
+  const toggleSelectAll = () => {
+    if (selectedProductIds.length === filteredProducts.length) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(filteredProducts.map(p => p.id));
+    }
+  };
+
+  const toggleSelectProduct = (id: string) => {
+    if (selectedProductIds.includes(id)) {
+      setSelectedProductIds(selectedProductIds.filter(pid => pid !== id));
+    } else {
+      setSelectedProductIds([...selectedProductIds, id]);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este produto?')) {
+      try {
+        await deleteDoc(doc(db, 'products', id));
+        toast.success('Produto excluído com sucesso!');
+      } catch (error) {
+        toast.error('Erro ao excluir produto.');
+      }
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (window.confirm(`Tem certeza que deseja excluir ${selectedProductIds.length} produtos?`)) {
+      try {
+        await Promise.all(selectedProductIds.map(id => deleteDoc(doc(db, 'products', id))));
+        toast.success(`${selectedProductIds.length} produtos excluídos com sucesso!`);
+        setSelectedProductIds([]);
+      } catch (error) {
+        toast.error('Erro ao excluir produtos em lote.');
+      }
+    }
+  };
+
   return (
     <div className="space-y-8">
       <Card className="border-slate-200 shadow-sm">
@@ -6040,10 +6102,97 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
           </div>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-wrap gap-4 mb-6">
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Categoria</Label>
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Categorias</SelectItem>
+                  {categories.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Linha</Label>
+              <Select value={filterLine} onValueChange={setFilterLine}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Linhas</SelectItem>
+                  {lines.map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Licenciador</Label>
+              <Select value={filterLicense} onValueChange={setFilterLicense}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Licenciadores</SelectItem>
+                  {licenses.map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Ano</Label>
+              <Select value={filterYear} onValueChange={setFilterYear}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {uniqueYears.map(year => (
+                    <SelectItem key={String(year)} value={String(year)}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {isAdmin && selectedProductIds.length > 0 && (
+            <div className="flex items-center gap-2 mb-4 p-2 bg-blue-50 border border-blue-100 rounded-md">
+              <span className="text-sm text-blue-700 font-medium px-2">
+                {selectedProductIds.length} selecionado(s)
+              </span>
+              <BatchEditProductsDialog 
+                selectedProductIds={selectedProductIds} 
+                lines={lines} 
+                categories={categories} 
+                licenses={licenses} 
+                onComplete={() => setSelectedProductIds([])} 
+              />
+              <Button variant="destructive" size="sm" onClick={handleBatchDelete} className="gap-2">
+                <Trash2 size={16} /> Excluir Selecionados
+              </Button>
+            </div>
+          )}
+
           <div className="rounded-md border border-slate-200 overflow-x-auto">
             <table className="w-full text-sm text-left min-w-[1200px]">
               <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                 <tr>
+                  {isAdmin && (
+                    <th className="px-4 py-3 w-12 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={filteredProducts.length > 0 && selectedProductIds.length === filteredProducts.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-slate-300"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 w-16">Imagem</th>
                   <th className="px-4 py-3">Código</th>
                   <th className="px-4 py-3">Nome</th>
@@ -6056,7 +6205,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {products.map((product) => {
+                {filteredProducts.map((product) => {
                   const line = lines.find(l => l.id === product.lineId);
                   const category = categories.find(c => c.id === product.categoryId);
                   const license = licenses.find(l => l.id === (product.licenseId || line?.licenseId));
@@ -6064,6 +6213,16 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+                      {isAdmin && (
+                        <td className="px-4 py-2 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedProductIds.includes(product.id)}
+                            onChange={() => toggleSelectProduct(product.id)}
+                            className="rounded border-slate-300"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-2">
                         {imageUrl ? (
                           <img 
@@ -6089,17 +6248,25 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                       <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
                       {isAdmin && (
                         <td className="px-4 py-4 text-right">
-                          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
-                            <Settings size={16} />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <EditProductDialog 
+                              product={product} 
+                              lines={lines} 
+                              categories={categories} 
+                              licenses={licenses} 
+                            />
+                            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-red-600" onClick={() => handleDeleteProduct(product.id)}>
+                              <Trash2 size={16} />
+                            </Button>
+                          </div>
                         </td>
                       )}
                     </tr>
                   );
                 })}
-                {products.length === 0 && (
+                {filteredProducts.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-slate-400">Nenhum produto cadastrado.</td>
+                    <td colSpan={isAdmin ? 10 : 8} className="px-4 py-8 text-center text-slate-400">Nenhum produto encontrado.</td>
                   </tr>
                 )}
               </tbody>
