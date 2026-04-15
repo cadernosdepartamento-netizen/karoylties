@@ -36,7 +36,7 @@ import {
   CircleDollarSign
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { 
   Dialog, 
   DialogContent, 
@@ -63,6 +64,8 @@ import {
   TableRow, 
   TableCell 
 } from '@/components/ui/table';
+
+import { SettingsView } from './components/SettingsView';
 
 // Types
 interface License { 
@@ -174,6 +177,15 @@ interface Payment {
   amount: number;
   date: string;
   status: 'pending' | 'paid';
+}
+
+interface UserProfile {
+  id: string;
+  email: string;
+  name?: string;
+  photoUrl?: string;
+  role: 'admin' | 'user';
+  createdAt?: any;
 }
 
 interface ErrorBoundaryProps {
@@ -486,7 +498,10 @@ function MainApp() {
                 </div>
               )}
               {activeTab === 'products' && isAdmin && (
-                <AddProductDialog lines={lines} categories={productCategories} licenses={licenses} />
+                <div className="flex items-center gap-2">
+                  <ImportProductsDialog lines={lines} categories={productCategories} licenses={licenses} />
+                  <AddProductDialog lines={lines} categories={productCategories} licenses={licenses} />
+                </div>
               )}
             </div>
           </header>
@@ -508,6 +523,7 @@ function MainApp() {
             {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'settings' && <SettingsView currentUser={user} isAdmin={isAdmin} />}
           </div>
         </main>
         <Toaster />
@@ -737,9 +753,9 @@ function AddLicensorDialog() {
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Licenciador
-          </Button>
+          </button>
         }
       />
       <DialogContent>
@@ -894,9 +910,9 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger nativeButton={true} render={
-        <Button variant="outline" className="gap-2">
+        <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Upload size={18} /> Importar Linhas
-        </Button>
+        </button>
       } />
       <DialogContent>
         <DialogHeader>
@@ -969,9 +985,9 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Nova Linha
-          </Button>
+          </button>
         }
       />
       <DialogContent>
@@ -1028,6 +1044,197 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
   );
 }
 
+function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], categories: ProductCategory[], licenses: License[] }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const templateColumns = [
+    "Licenciador",
+    "Linha",
+    "Código",
+    "Nome",
+    "Categoria",
+    "Ano",
+    "EAN"
+  ];
+
+  const downloadTemplate = () => {
+    const wsData = [
+      templateColumns,
+      [licenses[0]?.fantasyName || "Exemplo Licenciador", lines[0]?.name || "Exemplo Linha", "SKU123", "Exemplo Produto", categories[0]?.name || "Exemplo Categoria", "2024", "7891234567890"]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    
+    const instData = [
+      ["Instruções de Preenchimento"],
+      ["1. Licenciador: Deve ser o 'Nome Fantasia' de um licenciador já cadastrado no sistema."],
+      ["2. Linha: Deve ser o nome de uma linha já cadastrada e vinculada ao licenciador."],
+      ["3. Código: Código SKU do produto."],
+      ["4. Nome: Nome descritivo do produto."],
+      ["5. Categoria: Nome de uma categoria já cadastrada no sistema."],
+      ["6. Ano: Ano de lançamento (opcional)."],
+      ["7. EAN: Código de barras EAN (opcional)."],
+    ];
+    const instWs = XLSX.utils.aoa_to_sheet(instData);
+    XLSX.utils.book_append_sheet(wb, instWs, "Instruções");
+
+    XLSX.writeFile(wb, "template_importacao_produtos.xlsx");
+    toast.success("Template baixado com sucesso!");
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!file) return toast.error("Selecione um arquivo para importar.");
+    
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+        if (jsonData.length === 0) {
+          toast.error("O arquivo está vazio ou não possui dados válidos.");
+          setIsUploading(false);
+          return;
+        }
+
+        let importedCount = 0;
+        let skippedCount = 0;
+
+        for (const row of jsonData) {
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
+
+          const licensorName = String(getVal(["Licenciador"]) || "").trim();
+          const lineName = String(getVal(["Linha"]) || "").trim();
+          const sku = String(getVal(["Código", "SKU"]) || "").trim();
+          const productName = String(getVal(["Nome", "Produto"]) || "").trim();
+          const categoryName = String(getVal(["Categoria"]) || "").trim();
+          const yearRaw = getVal(["Ano", "Ano de lançamento"]);
+          const ean = String(getVal(["EAN", "Código de barras"]) || "").trim();
+
+          if (!lineName || !productName) {
+            skippedCount++;
+            continue;
+          }
+
+          let licenseId = '';
+          if (licensorName) {
+            const license = licenses.find(l => 
+              String(l.fantasyName || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+              String(l.legalName || "").trim().toLowerCase() === licensorName.toLowerCase()
+            );
+            if (license) licenseId = license.id;
+          }
+
+          const line = lines.find(l => 
+            String(l.name || "").trim().toLowerCase() === lineName.toLowerCase() &&
+            (!licenseId || l.licenseId === licenseId)
+          );
+
+          if (!line) {
+            console.warn(`Linha não encontrada: ${lineName}`);
+            skippedCount++;
+            continue;
+          }
+
+          let categoryId = '';
+          if (categoryName) {
+            const category = categories.find(c => String(c.name || "").trim().toLowerCase() === categoryName.toLowerCase());
+            if (category) categoryId = category.id;
+          }
+
+          const launchYear = yearRaw ? Number(yearRaw) : null;
+
+          await addDoc(collection(db, 'products'), {
+            name: productName.toString(),
+            lineId: line.id,
+            sku: sku.toString(),
+            categoryId,
+            licenseId: licenseId || line.licenseId,
+            launchYear: isNaN(launchYear as number) ? null : launchYear,
+            ean: ean.toString(),
+            createdAt: serverTimestamp()
+          });
+          importedCount++;
+        }
+
+        toast.success(`${importedCount} produtos importados com sucesso! ${skippedCount > 0 ? `(${skippedCount} pulados)` : ''}`);
+        setOpen(false);
+        setFile(null);
+      } catch (err) {
+        console.error(err);
+        toast.error("Erro ao processar o arquivo Excel.");
+      } finally {
+        setIsUploading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger nativeButton={true} render={
+        <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
+          <Upload size={18} /> Importar Produtos
+        </button>
+      } />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Importar Produtos em Lote</DialogTitle>
+          <DialogDescription>
+            Faça o upload de uma planilha Excel para cadastrar múltiplos produtos de uma vez.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-4">
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+            <h4 className="font-medium text-sm mb-2">Como importar:</h4>
+            <ol className="text-sm text-slate-600 space-y-1 list-decimal list-inside">
+              <li>Baixe o template de importação.</li>
+              <li>Preencha os dados seguindo as instruções.</li>
+              <li>Faça o upload do arquivo preenchido.</li>
+            </ol>
+            <Button variant="secondary" size="sm" onClick={downloadTemplate} className="mt-4 gap-2">
+              <Upload size={14} className="rotate-180" /> Baixar Template
+            </Button>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Arquivo Excel (.xlsx)</label>
+            <input 
+              type="file" 
+              accept=".xlsx, .xls" 
+              onChange={handleFileChange}
+              className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-md"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={isUploading}>Cancelar</Button>
+            <Button onClick={handleImport} disabled={!file || isUploading} className="bg-blue-600 hover:bg-blue-700">
+              {isUploading ? 'Importando...' : 'Importar Produtos'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AddProductDialog({ lines, categories, licenses }: { lines: Line[], categories: ProductCategory[], licenses: License[] }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -1071,9 +1278,9 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Produto
-          </Button>
+          </button>
         }
       />
       <DialogContent className="max-w-md">
@@ -1377,9 +1584,9 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
         nativeButton={true}
         render={
           trigger || (
-            <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2">
+            <button className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2")}>
               <Eye size={14} /> Ver Detalhes
-            </Button>
+            </button>
           )
         }
       />
@@ -2461,9 +2668,9 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
+          <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar informações
-          </Button>
+          </button>
         }
       />
       <DialogContent className="max-w-lg">
@@ -2706,9 +2913,9 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-50 gap-2">
+          <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar Pagamentos
-          </Button>
+          </button>
         }
       />
       <DialogContent className="max-w-lg">
@@ -2917,9 +3124,9 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger nativeButton={true} render={
-        <Button variant="outline" className="gap-2 border-slate-200 text-slate-600 hover:bg-slate-50">
+        <button className={cn(buttonVariants({ variant: "outline" }), "gap-2 border-slate-200 text-slate-600 hover:bg-slate-50")}>
           <FileSpreadsheet size={18} /> Importar Royalties
-        </Button>
+        </button>
       } />
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -3194,9 +3401,9 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Contrato
-          </Button>
+          </button>
         }
       />
       <DialogContent className="w-[40vw] !max-w-[40vw] max-h-[90vh] overflow-y-auto">
@@ -3781,9 +3988,9 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Relatório
-          </Button>
+          </button>
         }
       />
       <DialogContent>
@@ -3936,9 +4143,9 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
       <DialogTrigger
         nativeButton={true}
         render={
-          <Button className="bg-blue-600 hover:bg-blue-700 gap-2">
+          <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Pagamento
-          </Button>
+          </button>
         }
       />
       <DialogContent className="max-w-3xl">
@@ -4690,9 +4897,9 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           <div className="flex items-center gap-2">
             <Dialog>
               <DialogTrigger nativeButton={true} render={
-                <Button variant="outline" size="sm" className="gap-2 text-red-600 border-red-200 hover:bg-red-50">
+                <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
                   <Trash2 size={14} /> Limpar Tudo
-                </Button>
+                </button>
               } />
               <DialogContent>
                 <DialogHeader>
@@ -4722,9 +4929,9 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
             <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
             <Dialog>
               <DialogTrigger nativeButton={true} render={
-                <Button variant="destructive" size="sm" className="gap-2">
+                <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
                   <Trash2 size={14} /> Excluir Selecionados
-                </Button>
+                </button>
               } />
               <DialogContent>
                 <DialogHeader>
@@ -4905,11 +5112,11 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
-          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
+          <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
             <Settings size={16} />
-          </Button>
+          </button>
         }
       />
       <DialogContent className="max-w-3xl">
@@ -5312,11 +5519,11 @@ function EditLicensorDialog({ license }: { license: License }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
-          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-blue-600">
+          <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
             <Settings size={16} />
-          </Button>
+          </button>
         }
       />
       <DialogContent>
@@ -5465,7 +5672,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={trigger || (
+      <DialogTrigger nativeButton={true} render={trigger || (
         <button className="text-slate-400 hover:text-blue-600 p-2 rounded-md">
           <Settings size={16} />
         </button>
@@ -5574,14 +5781,12 @@ function DeleteReportDialog({ reportId }: { reportId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="text-slate-400 hover:text-red-600 h-6 w-6 p-0"
+      <DialogTrigger nativeButton={true} render={
+        <button 
+          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-slate-400 hover:text-red-600 h-6 w-6 p-0")}
         >
           <Trash2 size={12} />
-        </Button>
+        </button>
       } />
       <DialogContent>
         <DialogHeader>
@@ -5614,14 +5819,12 @@ function DeleteLineDialog({ lineId, lineName }: { lineId: string, lineName: stri
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
-        <Button 
-          variant="ghost" 
-          size="icon-sm" 
-          className="text-slate-400 hover:text-red-600"
+      <DialogTrigger nativeButton={true} render={
+        <button 
+          className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-slate-400 hover:text-red-600")}
         >
           <Trash2 size={16} />
-        </Button>
+        </button>
       } />
       <DialogContent>
         <DialogHeader>
