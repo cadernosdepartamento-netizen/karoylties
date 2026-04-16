@@ -1320,7 +1320,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Licenciador</Label>
-              <Select onValueChange={setLicenseId} value={licenseId}>
+              <Select onValueChange={(v) => { setLicenseId(v); setLineId(''); }} value={licenseId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
@@ -1367,7 +1367,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.sort((a, b) => a.name.localeCompare(b.name)).map(c => (
+                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1463,7 +1463,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
     if (isDividedIntoYears) {
       const n = parseInt(numYears) || 0;
       setYears(prev => {
-        const newYears = prev ? [...prev] : [];
+        let newYears = prev ? [...prev] : [];
         if (newYears.length < n) {
           for (let i = newYears.length + 1; i <= n; i++) {
             newYears.push({
@@ -1474,7 +1474,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
             });
           }
         } else if (newYears.length > n) {
-          return newYears.slice(0, n);
+          newYears = newYears.slice(0, n);
         }
         return newYears;
       });
@@ -1747,7 +1747,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                         <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
                       <SelectContent>
                         {contracts && [...contracts].filter(c => c.licenseId === licenseId && c.id !== contract.id).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id}</SelectItem>
+                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0, 5)}`}</SelectItem>
                         ))}
                       </SelectContent>
                       </Select>
@@ -2270,7 +2270,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Contrato</p>
-                  <p className="text-sm font-semibold text-slate-900">{contract.contractNumber || '-'}</p>
+                  <p className="text-sm font-semibold text-slate-900">{contract.contractNumber || `ID: ${contract.id.slice(0, 5)}`}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</p>
@@ -2294,12 +2294,12 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
               <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">2. Vigência e Período de Sell-off</h3>
               <div className="grid grid-cols-4 gap-6">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Início</p>
-                  <p className="text-sm text-slate-700 font-medium">{formatDateBR(contract.startDate)}</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vigência</p>
+                  <p className="text-sm text-slate-700 font-medium">{formatDateBR(contract.startDate)} - {formatDateBR(contract.endDate)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Término</p>
-                  <p className="text-sm text-slate-700 font-medium">{formatDateBR(contract.endDate)}</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Compensação</p>
+                  <p className="text-sm text-slate-700 font-medium">Royalty</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Período Sell-off</p>
@@ -3497,7 +3497,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2 col-span-2">
                 <Label>Licenciador</Label>
-                <Select onValueChange={setLicenseId} value={licenseId}>
+                <Select onValueChange={(v) => { setLicenseId(v); setParentId(''); }} value={licenseId}>
                   <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                   <SelectContent>
                     {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
@@ -3534,7 +3534,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                       <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
                       <SelectContent>
                         {contracts && [...contracts].filter(c => c.licenseId === licenseId).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id}</SelectItem>
+                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0, 5)}`}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -4096,11 +4096,11 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
             <Label>Contrato</Label>
-            <Select onValueChange={setContractId} value={contractId}>
+            <Select onValueChange={(v) => { setContractId(v); setLineId(''); setProductId(''); }} value={contractId}>
               <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
               <SelectContent>
                 {[...contracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                  <SelectItem key={c.id} value={c.id}>Contrato {c.contractNumber || `#${c.id.slice(0,5)}`}</SelectItem>
+                  <SelectItem key={c.id} value={c.id}>Contrato {c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -5321,7 +5321,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 <th className="px-2 py-3">Ano VA</th>
                 <th className="px-2 py-3">Preço de custo</th>
                 <th className="px-2 py-3">CMF</th>
-                <th className="px-2 py-3">ID Licenciador</th>
+                <th className="px-2 py-3">Contrato</th>
                 {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
               </tr>
             </thead>
@@ -5358,7 +5358,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                     <td className="px-2 py-4 text-slate-600">{report.anoVA || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.costPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.cmf || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600 text-[8px]">{contract?.licenseId || '-'}</td>
+                    <td className="px-2 py-4 text-slate-600 text-[10px]">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0, 5)}` : '-')}</td>
                     {isAdmin && (
                       <td className="px-2 py-4 text-right">
                         <div className="flex justify-end items-center gap-1">
