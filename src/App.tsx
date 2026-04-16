@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect, Component, ReactNode } from 'react';
-import { auth, db, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType } from './firebase';
+import { auth, db, storage, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType, uploadFile } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -1455,6 +1456,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   const [propertiesInfo, setPropertiesInfo] = useState(contract.propertiesInfo || '');
   const [productsInfo, setProductsInfo] = useState(contract.productsInfo || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Effects
   useEffect(() => {
@@ -2191,14 +2193,29 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                       id="edit-contract-file-upload" 
                       className="hidden" 
                       accept=".pdf,.doc,.docx"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         if (e.target.files && e.target.files[0]) {
-                          toast.success(`Arquivo ${e.target.files[0].name} selecionado.`);
-                          // Simulating upload by setting a fake URL
-                          setSignedContractUrl(`https://storage.mock/contracts/${e.target.files[0].name}`);
+                          const file = e.target.files[0];
+                          try {
+                            setIsUploading(true);
+                            const path = `contracts/${Date.now()}_${file.name}`;
+                            const url = await uploadFile(file, path);
+                            setSignedContractUrl(url);
+                            toast.success(`Arquivo ${file.name} enviado com sucesso!`);
+                          } catch (error) {
+                            console.error("Upload error:", error);
+                            toast.error("Erro ao enviar arquivo.");
+                          } finally {
+                            setIsUploading(false);
+                          }
                         }
                       }}
                     />
+                    {isUploading && (
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden animate-pulse">
+                        <div className="bg-blue-600 h-full w-1/3 animate-progress transition-all duration-300"></div>
+                      </div>
+                    )}
                     <div className="w-full flex items-center gap-2">
                       <div className="h-[1px] bg-slate-200 flex-1"></div>
                       <span className="text-[10px] text-slate-400 uppercase font-bold">ou insira o link</span>
@@ -2209,7 +2226,16 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                       placeholder="Link do arquivo (Ex: Google Drive, Dropbox)" 
                       value={signedContractUrl}
                       onChange={(e) => setSignedContractUrl(e.target.value)}
+                      disabled={isUploading}
                     />
+                    {signedContractUrl && !isUploading && (
+                      <div className="flex items-center gap-2 text-xs text-emerald-600 font-medium">
+                        <CheckCircle2 size={14} /> Arquivo vinculado com sucesso
+                        <a href={signedContractUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-blue-600 hover:underline flex items-center gap-1">
+                          Ver arquivo <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3297,6 +3323,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
 
   // Page 8: Signed Contract
   const [signedContractUrl, setSignedContractUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   // Effects
   useEffect(() => {
@@ -3948,14 +3975,29 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                     id="contract-file-upload" 
                     className="hidden" 
                     accept=".pdf,.doc,.docx"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       if (e.target.files && e.target.files[0]) {
-                        toast.success(`Arquivo ${e.target.files[0].name} selecionado.`);
-                        // Simulating upload by setting a fake URL
-                        setSignedContractUrl(`https://storage.mock/contracts/${e.target.files[0].name}`);
+                        const file = e.target.files[0];
+                        try {
+                          setIsUploading(true);
+                          const path = `contracts/${Date.now()}_${file.name}`;
+                          const url = await uploadFile(file, path);
+                          setSignedContractUrl(url);
+                          toast.success(`Arquivo ${file.name} enviado com sucesso!`);
+                        } catch (error) {
+                          console.error("Upload error:", error);
+                          toast.error("Erro ao enviar arquivo.");
+                        } finally {
+                          setIsUploading(false);
+                        }
                       }
                     }}
                   />
+                  {isUploading && (
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden animate-pulse">
+                      <div className="bg-blue-600 h-full w-1/3 animate-progress transition-all duration-300"></div>
+                    </div>
+                  )}
                   <div className="w-full flex items-center gap-2">
                     <div className="h-[1px] bg-slate-200 flex-1"></div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold">ou insira o link</span>
@@ -3966,7 +4008,16 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                     placeholder="Link do arquivo (Ex: Google Drive, Dropbox)" 
                     value={signedContractUrl}
                     onChange={(e) => setSignedContractUrl(e.target.value)}
+                    disabled={isUploading}
                   />
+                  {signedContractUrl && !isUploading && (
+                    <div className="flex items-center gap-2 text-xs text-emerald-600 font-medium">
+                      <CheckCircle2 size={14} /> Arquivo vinculado com sucesso
+                      <a href={signedContractUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-blue-600 hover:underline flex items-center gap-1">
+                        Ver arquivo <ExternalLink size={12} />
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
