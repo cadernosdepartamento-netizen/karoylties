@@ -53,7 +53,7 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Edit2 size={16} /> Editar Selecionados
         </button>

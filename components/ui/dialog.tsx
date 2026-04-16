@@ -62,7 +62,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            nativeButton={true}
+            nativeButton={false}
             render={
               <button
                 className={cn(
@@ -111,7 +111,7 @@ function DialogFooter({
     >
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close nativeButton={true} render={<button className={buttonVariants({ variant: "outline" })} />}>
+        <DialogPrimitive.Close nativeButton={false} render={<button className={buttonVariants({ variant: "outline" })} />}>
           Close
         </DialogPrimitive.Close>
       )}

@@ -69,7 +69,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
           <Edit2 size={16} />
         </button>

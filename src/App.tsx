@@ -779,7 +779,7 @@ function AddLicensorDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Licenciador
@@ -937,7 +937,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Upload size={18} /> Importar Linhas
         </button>
@@ -1011,7 +1011,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Nova Linha
@@ -1218,7 +1218,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Upload size={18} /> Importar Produtos
         </button>
@@ -1304,7 +1304,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Produto
@@ -1622,7 +1622,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           trigger || (
             <button className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2")}>
@@ -2731,7 +2731,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar informações
@@ -2976,7 +2976,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar Pagamentos
@@ -3188,7 +3188,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2 border-slate-200 text-slate-600 hover:bg-slate-50")}>
           <FileSpreadsheet size={18} /> Importar Royalties
         </button>
@@ -3471,7 +3471,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setStep(1); }}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Contrato
@@ -4082,7 +4082,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Relatório
@@ -4237,7 +4237,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Pagamento
@@ -4389,9 +4389,37 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
 }
 
 function DashboardView({ contracts, reports, payments, licenses, lines, products }: any) {
-  const totalRoyalties = reports.reduce((acc: number, r: any) => acc + r.royaltyValue, 0);
-  const totalMG = contracts.reduce((acc: number, c: any) => acc + c.minimumGuarantee, 0);
-  const totalPaid = payments.filter((p: any) => p.status === 'paid').reduce((acc: number, p: any) => acc + p.amount, 0);
+  const totalRoyalties = React.useMemo(() => reports.reduce((acc: number, r: any) => acc + r.royaltyValue, 0), [reports]);
+  const totalMG = React.useMemo(() => contracts.reduce((acc: number, c: any) => acc + c.minimumGuarantee, 0), [contracts]);
+  const totalPaid = React.useMemo(() => payments.filter((p: any) => p.status === 'paid').reduce((acc: number, p: any) => acc + p.amount, 0), [payments]);
+
+  const activeContractsCount = React.useMemo(() => 
+    contracts.filter((c: any) => ['Ativo', 'Ativo (sell-off)'].includes(getContractStatus(c).label)).length,
+  [contracts]);
+
+  const contractCompensations = React.useMemo(() => {
+    return contracts.slice(0, 5).map((contract: any) => {
+      const license = licenses.find((l: any) => l.id === contract.licenseId);
+      const contractRoyalties = reports
+        .filter((r: any) => r.contractId === contract.id)
+        .reduce((acc: number, r: any) => acc + r.royaltyValue, 0);
+      const progress = Math.min((contractRoyalties / (contract.minimumGuarantee || 1)) * 100, 100);
+      
+      return {
+        id: contract.id,
+        licenseName: license?.fantasyName || 'Licenciador',
+        contractNumber: contract.contractNumber || contract.id.slice(0, 5),
+        contractRoyalties,
+        minimumGuarantee: contract.minimumGuarantee,
+        currency: contract.currency,
+        progress
+      };
+    });
+  }, [contracts, licenses, reports]);
+
+  const pendingPayments = React.useMemo(() => 
+    payments.filter((p: any) => p.status === 'pending').slice(0, 5),
+  [payments]);
 
   return (
     <div className="space-y-8">
@@ -4414,7 +4442,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
           title="Mínimo Garantido Total" 
           value={`R$ ${totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
           icon={<CheckCircle2 className="text-blue-600" />}
-          trend={`${contracts.filter((c: any) => ['Ativo', 'Ativo (sell-off)'].includes(getContractStatus(c).label)).length} contratos vigentes`}
+          trend={`${activeContractsCount} contratos vigentes`}
           color="blue"
         />
         <StatCard 
@@ -4434,27 +4462,21 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              {contracts.slice(0, 5).map((contract: any) => {
-                const license = licenses.find((l: any) => l.id === contract.licenseId);
-                const contractRoyalties = reports
-                  .filter((r: any) => r.contractId === contract.id)
-                  .reduce((acc: number, r: any) => acc + r.royaltyValue, 0);
-                const progress = Math.min((contractRoyalties / contract.minimumGuarantee) * 100, 100);
-                
+              {contractCompensations.map((comp: any) => {
                 return (
-                  <div key={contract.id} className="space-y-2">
+                  <div key={comp.id} className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium text-slate-700">
-                        {license?.fantasyName || 'Licenciador'} - {contract.contractNumber || contract.id.slice(0, 5)}
+                        {comp.licenseName} - {comp.contractNumber}
                       </span>
                       <span className="text-slate-500">
-                        {getCurrencySymbol(contract.currency || 'BRL')} {contractRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        {getCurrencySymbol(comp.currency || 'BRL')} {comp.contractRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {getCurrencySymbol(comp.currency || 'BRL')} {comp.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div 
-                        className={`h-full transition-all duration-500 ${progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                        style={{ width: `${progress}%` }}
+                        className={`h-full transition-all duration-500 ${comp.progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                        style={{ width: `${comp.progress}%` }}
                       />
                     </div>
                   </div>
@@ -4471,7 +4493,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {payments.filter((p: any) => p.status === 'pending').slice(0, 5).map((payment: any) => (
+              {pendingPayments.map((payment: any) => (
                 <div key={payment.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-white rounded-md border border-slate-200">
@@ -4490,7 +4512,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                   </div>
                 </div>
               ))}
-              {payments.filter((p: any) => p.status === 'pending').length === 0 && (
+              {pendingPayments.length === 0 && (
                 <div className="text-center py-8 text-slate-400">
                   Nenhum pagamento pendente encontrado.
                 </div>
@@ -4832,11 +4854,11 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
   const [viewType, setViewType] = useState<'cards' | 'table'>('cards');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' | null }>({ key: 'license', direction: 'asc' });
 
-  const processedContracts = contracts.map((contract: any) => {
+  const processedContracts = React.useMemo(() => contracts.map((contract: any) => {
     const statusInfo = getContractStatus(contract);
     const contractReports = reports.filter((r: any) => r.contractId === contract.id);
     const totalRoyalties = contractReports.reduce((sum: number, r: any) => sum + r.royaltyValue, 0);
-    const balance = contract.minimumGuarantee - totalRoyalties;
+    const balance = (contract.minimumGuarantee || 0) - totalRoyalties;
     const license = licenses.find((l: any) => l.id === contract.licenseId);
     
     return { 
@@ -4847,14 +4869,14 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
       totalRoyalties,
       balance
     };
-  });
+  }), [contracts, reports, licenses]);
 
-  const filteredContracts = processedContracts.filter((c: any) => {
+  const filteredContracts = React.useMemo(() => processedContracts.filter((c: any) => {
     if (statusFilter === 'Todos') return true;
     return c.calculatedStatus === statusFilter;
-  });
+  }), [processedContracts, statusFilter]);
 
-  const sortedContracts = [...filteredContracts].sort((a, b) => {
+  const sortedContracts = React.useMemo(() => [...filteredContracts].sort((a, b) => {
     if (!sortConfig.key || !sortConfig.direction) return 0;
 
     let valA: any;
@@ -4904,9 +4926,9 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
     if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
     if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;
-  });
+  }), [filteredContracts, sortConfig]);
 
-  const handleSort = (key: string) => {
+  const handleSort = React.useCallback((key: string) => {
     let direction: 'asc' | 'desc' | null = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
@@ -4914,7 +4936,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
       direction = null;
     }
     setSortConfig({ key, direction });
-  };
+  }, [sortConfig]);
 
   const SortIcon = ({ column }: { column: string }) => {
     if (sortConfig.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
@@ -5217,7 +5239,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
         {isAdmin && reports.length > 0 && (
           <div className="flex items-center gap-2">
             <Dialog>
-              <DialogTrigger nativeButton={true} render={
+              <DialogTrigger nativeButton={false} render={
                 <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
                   <Trash2 size={14} /> Limpar Tudo
                 </button>
@@ -5249,7 +5271,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
             <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
             <Dialog>
-              <DialogTrigger nativeButton={true} render={
+              <DialogTrigger nativeButton={false} render={
                 <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
                   <Trash2 size={14} /> Excluir Selecionados
                 </button>
@@ -5433,7 +5455,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
             <Settings size={16} />
@@ -5642,10 +5664,12 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
     }
   };
 
-  const sortedPayments = [...payments].sort((a: any, b: any) => {
+  const sortedPayments = React.useMemo(() => [...payments].sort((a: any, b: any) => {
     if (!sortConfig) {
       // Default sort: by date descending
-      return new Date(b.date || b.createdAt?.toDate()).getTime() - new Date(a.date || a.createdAt?.toDate()).getTime();
+      const dateA = a.date || (a.createdAt && typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate() : 0);
+      const dateB = b.date || (b.createdAt && typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate() : 0);
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
     }
 
     let aValue: any;
@@ -5686,7 +5710,7 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
     if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
     if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;
-  });
+  }), [payments, sortConfig, contracts, licenses]);
 
   const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
     <th 
@@ -5840,7 +5864,7 @@ function EditLicensorDialog({ license }: { license: License }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={true}
+        nativeButton={false}
         render={
           <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
             <Settings size={16} />
@@ -5993,7 +6017,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={trigger || (
+      <DialogTrigger nativeButton={false} render={trigger || (
         <button className="text-slate-400 hover:text-blue-600 p-2 rounded-md">
           <Settings size={16} />
         </button>
@@ -6102,7 +6126,7 @@ function DeleteReportDialog({ reportId }: { reportId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button 
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-slate-400 hover:text-red-600 h-6 w-6 p-0")}
         >
@@ -6140,7 +6164,7 @@ function DeleteLineDialog({ lineId, lineName }: { lineId: string, lineName: stri
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
+      <DialogTrigger nativeButton={false} render={
         <button 
           className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-slate-400 hover:text-red-600")}
         >
@@ -6367,7 +6391,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     setSortConfig({ key, direction });
   };
 
-  const filteredProducts = products.filter(product => {
+  const filteredProducts = React.useMemo(() => products.filter(product => {
     const line = lines.find(l => l.id === product.lineId);
     const licenseId = product.licenseId || line?.licenseId;
     
@@ -6377,9 +6401,9 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     if (filterYear !== 'all' && String(product.launchYear) !== filterYear) return false;
     
     return true;
-  });
+  }), [products, lines, filterCategory, filterLine, filterLicense, filterYear]);
 
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
+  const sortedProducts = React.useMemo(() => [...filteredProducts].sort((a, b) => {
     let valA: any = a[sortConfig.key as keyof Product];
     let valB: any = b[sortConfig.key as keyof Product];
 
@@ -6406,7 +6430,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
       return sortConfig.direction === 'asc' ? 1 : -1;
     }
     return 0;
-  });
+  }), [filteredProducts, sortConfig, categories, lines, licenses]);
 
   const uniqueYears = Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))).sort();
 
