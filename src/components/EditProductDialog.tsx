@@ -89,7 +89,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhum</SelectItem>
-                  {licenses.map(l => (
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName).localeCompare(b.fantasyName || b.legalName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -102,7 +102,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).map(l => (
+                  {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => a.name.localeCompare(b.name)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -130,7 +130,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhuma</SelectItem>
-                  {categories.map(c => (
+                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>

@@ -1031,7 +1031,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
                 <SelectValue placeholder="Selecione o licenciador" />
               </SelectTrigger>
               <SelectContent>
-                {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                   <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                 ))}
               </SelectContent>
@@ -1325,7 +1325,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1702,7 +1702,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                   <Select onValueChange={setLicenseId} value={licenseId}>
                     <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                     <SelectContent>
-                      {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                      {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                         <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1745,11 +1745,11 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                       <Label>Contrato Pai</Label>
                       <Select onValueChange={setParentId} value={parentId}>
                         <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
-                        <SelectContent>
-                          {contracts && contracts.filter(c => c.licenseId === licenseId && c.id !== contract.id).map(c => (
-                            <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id}</SelectItem>
-                          ))}
-                        </SelectContent>
+                      <SelectContent>
+                        {contracts && [...contracts].filter(c => c.licenseId === licenseId && c.id !== contract.id).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id}</SelectItem>
+                        ))}
+                      </SelectContent>
                       </Select>
                     </div>
                   )}
@@ -3500,7 +3500,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                 <Select onValueChange={setLicenseId} value={licenseId}>
                   <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                   <SelectContent>
-                    {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                    {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                       <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                     ))}
                   </SelectContent>
@@ -3533,7 +3533,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                     <Select onValueChange={setParentId} value={parentId}>
                       <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
                       <SelectContent>
-                        {contracts && contracts.filter(c => c.licenseId === licenseId).map(c => (
+                        {contracts && [...contracts].filter(c => c.licenseId === licenseId).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
                           <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id}</SelectItem>
                         ))}
                       </SelectContent>
@@ -4099,7 +4099,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
             <Select onValueChange={setContractId} value={contractId}>
               <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
               <SelectContent>
-                {contracts.sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
+                {[...contracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
                   <SelectItem key={c.id} value={c.id}>Contrato {c.contractNumber || `#${c.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
@@ -4282,7 +4282,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -4296,7 +4296,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
               <Select onValueChange={setContractId} value={contractId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
                 <SelectContent>
-                  {filteredContracts.sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
+                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
@@ -5500,7 +5500,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -5514,7 +5514,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
               <Select onValueChange={setContractId} value={contractId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
                 <SelectContent>
-                  {filteredContracts.sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
+                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
@@ -6033,7 +6033,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
               <Select onValueChange={setLicenseId} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {licenses.sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
+                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -6492,7 +6492,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Categorias</SelectItem>
-                  {categories.map(c => (
+                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -6506,7 +6506,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Linhas</SelectItem>
-                  {lines.map(l => (
+                  {[...lines].sort((a, b) => a.name.localeCompare(b.name)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -6520,7 +6520,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os Licenciadores</SelectItem>
-                  {licenses.map(l => (
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName).localeCompare(b.fantasyName || b.legalName)).map(l => (
                     <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
                   ))}
                 </SelectContent>
