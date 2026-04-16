@@ -1458,18 +1458,24 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
 
   // Effects
   useEffect(() => {
-    if (isDividedIntoYears && years.length === 0) {
+    if (isDividedIntoYears) {
       const n = parseInt(numYears) || 0;
-      const newYears: ContractYear[] = [];
-      for (let i = 1; i <= n; i++) {
-        newYears.push({
-          yearNumber: i,
-          startDate: '',
-          endDate: '',
-          minimumGuarantee: 0
-        });
-      }
-      setYears(newYears);
+      setYears(prev => {
+        const newYears = prev ? [...prev] : [];
+        if (newYears.length < n) {
+          for (let i = newYears.length + 1; i <= n; i++) {
+            newYears.push({
+              yearNumber: i,
+              startDate: '',
+              endDate: '',
+              minimumGuarantee: 0
+            });
+          }
+        } else if (newYears.length > n) {
+          return newYears.slice(0, n);
+        }
+        return newYears;
+      });
     }
   }, [isDividedIntoYears, numYears]);
 
@@ -3296,16 +3302,22 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   useEffect(() => {
     if (isDividedIntoYears) {
       const n = parseInt(numYears) || 0;
-      const newYears: ContractYear[] = [];
-      for (let i = 1; i <= n; i++) {
-        newYears.push({
-          yearNumber: i,
-          startDate: '',
-          endDate: '',
-          minimumGuarantee: 0
-        });
-      }
-      setYears(newYears);
+      setYears(prev => {
+        const newYears = [...prev];
+        if (newYears.length < n) {
+          for (let i = newYears.length + 1; i <= n; i++) {
+            newYears.push({
+              yearNumber: i,
+              startDate: '',
+              endDate: '',
+              minimumGuarantee: 0
+            });
+          }
+        } else if (newYears.length > n) {
+          return newYears.slice(0, n);
+        }
+        return newYears;
+      });
     } else {
       setYears([]);
     }
