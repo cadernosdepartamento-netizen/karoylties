@@ -4622,7 +4622,7 @@ function ContractCard({
         <div className="flex justify-between items-start gap-4">
           <div className="space-y-0.5">
             <h2 className="text-2xl font-medium text-slate-900 tracking-tight leading-tight">{contract.licenseName}</h2>
-            <div className="text-lg text-slate-400 font-light">{contract.contractNumber || '---'}</div>
+            <div className="text-[13px] text-slate-400 font-light">{contract.contractNumber || '---'}</div>
           </div>
           <div className="flex flex-col items-end gap-2">
             <Badge className={cn("rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider", contract.statusColor)}>
@@ -4645,8 +4645,8 @@ function ContractCard({
 
         <div className="border-t border-slate-100 pt-4">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-lg text-slate-500 font-normal">Vigência</h3>
-            <Calendar className="text-slate-400" size={20} />
+            <h3 className="text-[13px] text-slate-500 font-normal">Vigência</h3>
+            <Calendar className="text-slate-400" size={16} />
           </div>
           
           <div className="flex justify-between text-slate-400 text-[10px] mb-2 font-medium uppercase tracking-wide">
@@ -4672,7 +4672,7 @@ function ContractCard({
 
         <div className="border-t border-slate-100 pt-4">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg text-slate-500 font-normal">Compensação</h3>
+            <h3 className="text-[13px] text-slate-500 font-normal">Compensação</h3>
             <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-4 py-1.5 rounded-lg text-sm font-bold font-mono">
                {contract.currency === 'Dólar' ? 'USD' : 
                 contract.currency === 'Real' ? 'BRL' : 
