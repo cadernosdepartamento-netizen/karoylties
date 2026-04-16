@@ -1031,8 +1031,8 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
                 <SelectValue placeholder="Selecione o licenciador" />
               </SelectTrigger>
               <SelectContent>
-                {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1325,8 +1325,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1338,8 +1338,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {lines.filter(l => !licenseId || l.licenseId === licenseId).sort((a, b) => a.name.localeCompare(b.name)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                  {lines.filter(l => !licenseId || l.licenseId === licenseId).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1367,8 +1367,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  {[...categories].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1457,6 +1457,61 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   const [productsInfo, setProductsInfo] = useState(contract.productsInfo || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Sync state when dialog opens or contract changes
+  useEffect(() => {
+    if (open) {
+      setLicenseId(contract.licenseId);
+      setContractNumber(contract.contractNumber || '');
+      setStartDate(contract.startDate);
+      setEndDate(contract.endDate);
+      setIsDividedIntoYears(contract.isDividedIntoYears || false);
+      setNumYears(contract.years?.length.toString() || '1');
+      setYears(contract.years || []);
+      setPaymentTerms(contract.paymentTerms || '');
+      setReportingFrequency(contract.reportingFrequency || 'Mensal');
+      setStatus(contract.status || 'Ativo');
+      setSellOffPeriod(contract.sellOffPeriod || '');
+      setSellOffEndDate(contract.sellOffEndDate || '');
+      setCurrency(contract.currency || 'BRL');
+      setIsAddendum(contract.isAddendum || false);
+      setParentId(contract.parentId || '');
+      setHasNetSales(!!contract.royaltyRateNetSales1);
+      setRoyaltyRateNetSales1((contract.royaltyRateNetSales1 ? contract.royaltyRateNetSales1 * 100 : 0).toString());
+      setRoyaltyNetSalesNotes(contract.royaltyNetSalesNotes || '');
+      setHasAdditionalNetSales(contract.hasAdditionalNetSales || false);
+      setRoyaltyRateNetSales2((contract.royaltyRateNetSales2 ? contract.royaltyRateNetSales2 * 100 : 0).toString());
+      setRoyaltyNetSalesNotes2(contract.royaltyNetSalesNotes2 || '');
+      setHasNetPurchases(!!contract.royaltyRateNetPurchases);
+      setRoyaltyRateNetPurchases((contract.royaltyRateNetPurchases ? contract.royaltyRateNetPurchases * 100 : 0).toString());
+      setRoyaltyNetPurchasesNotes(contract.royaltyNetPurchasesNotes || '');
+      setHasAdditionalNetPurchases(contract.hasAdditionalNetPurchases || false);
+      setRoyaltyRateNetPurchases2((contract.royaltyRateNetPurchases2 ? contract.royaltyRateNetPurchases2 * 100 : 0).toString());
+      setRoyaltyNetPurchasesNotes2(contract.royaltyNetPurchasesNotes2 || '');
+      setHasFOB(!!contract.royaltyRateFOB);
+      setRoyaltyRateFOB((contract.royaltyRateFOB ? contract.royaltyRateFOB * 100 : 0).toString());
+      setRoyaltyFOBNotes(contract.royaltyFOBNotes || '');
+      setHasAdditionalFOB(contract.hasAdditionalFOB || false);
+      setRoyaltyRateFOB2((contract.royaltyRateFOB2 ? contract.royaltyRateFOB2 * 100 : 0).toString());
+      setRoyaltyFOBNotes2(contract.royaltyFOBNotes2 || '');
+      setSelectedLines(contract.lineIds || []);
+      setSelectedProducts(contract.productIds || []);
+      setSignedContractUrl(contract.signedContractUrl || '');
+      setReportingDeadline(contract.reportingDeadline || '');
+      setPaymentDeadline(contract.paymentDeadline || '');
+      setNumInstallments(contract.mgInstallments?.length.toString() || '1');
+      setInstallments(contract.mgInstallments || []);
+      setHasMarketingFund(contract.hasMarketingFund || false);
+      setMarketingFundType(contract.marketingFundType || '');
+      setMarketingFundRate((contract.marketingFundRate ? contract.marketingFundRate * 100 : 0).toString());
+      setHasMarketingFundInstallments(contract.hasMarketingFundInstallments || false);
+      setNumMarketingFundInstallments(contract.marketingFundInstallments?.length.toString() || '1');
+      setMarketingFundInstallments(contract.marketingFundInstallments || []);
+      setPropertiesInfo(contract.propertiesInfo || '');
+      setProductsInfo(contract.productsInfo || '');
+      setStep(1);
+    }
+  }, [open, contract]);
 
   // Effects
   useEffect(() => {
@@ -1702,8 +1757,8 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                   <Select onValueChange={setLicenseId} value={licenseId}>
                     <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                     <SelectContent>
-                      {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                      {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                        <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -3497,14 +3552,14 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2 col-span-2">
                 <Label>Licenciador</Label>
-                <Select onValueChange={(v) => { setLicenseId(v); setParentId(''); }} value={licenseId}>
-                  <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
-                  <SelectContent>
-                    {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                      <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Select onValueChange={(v) => { setLicenseId(v); setParentId(''); }} value={licenseId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                    <SelectContent>
+                      {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                        <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
               </div>
               <div className="space-y-2">
                 <Label>Nº do Contrato</Label>
@@ -4127,8 +4182,8 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
                 {products.filter(p => {
                   const contract = contracts.find(c => c.id === contractId);
                   return (contract?.productIds || []).includes(p.id) && (lineId ? p.lineId === lineId : true);
-                }).sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                }).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.name || `ID: ${p.id.slice(0,5)}`}</SelectItem>
                 ))}
                 {(!selectedContract || (selectedContract.productIds || []).length === 0) && (
                   <SelectItem value="Geral">Geral / Não especificado</SelectItem>
@@ -4282,8 +4337,8 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -5500,8 +5555,8 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6033,8 +6088,8 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
               <Select onValueChange={setLicenseId} value={licenseId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6492,8 +6547,8 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Categorias</SelectItem>
-                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  {[...categories].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6506,8 +6561,8 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Linhas</SelectItem>
-                  {[...lines].sort((a, b) => a.name.localeCompare(b.name)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                  {[...lines].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6520,8 +6575,8 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os Licenciadores</SelectItem>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName).localeCompare(b.fantasyName || b.legalName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

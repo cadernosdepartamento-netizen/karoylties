@@ -75,8 +75,8 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Remover Licenciador</SelectItem>
-                {[...licenses].sort((a, b) => (a.fantasyName || a.legalName).localeCompare(b.fantasyName || b.legalName)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
+                {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -89,8 +89,8 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
                 <SelectValue placeholder="Manter atual" />
               </SelectTrigger>
               <SelectContent>
-                {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => a.name.localeCompare(b.name)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -104,8 +104,8 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Remover Categoria</SelectItem>
-                {[...categories].sort((a,b) => a.name.localeCompare(b.name)).map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                {[...categories].sort((a,b) => (a.name || '').localeCompare(b.name || '')).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
