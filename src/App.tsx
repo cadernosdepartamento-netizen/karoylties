@@ -6261,7 +6261,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                   const line = lines.find(l => l.id === product.lineId);
                   const category = categories.find(c => c.id === product.categoryId);
                   const license = licenses.find(l => l.id === (product.licenseId || line?.licenseId));
-                  const imageUrl = (product.sku && product.sku.trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${product.sku.trim()}.jpg` : null;
+                  const imageUrl = (product.sku && product.sku.trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${String(product.sku.trim()).padStart(6, '0')}.jpg` : null;
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50 transition-colors">
@@ -6291,7 +6291,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                           <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-xs text-slate-400">N/A</div>
                         )}
                       </td>
-                      <td className="px-4 py-4 font-medium text-slate-900">{product.sku || '-'}</td>
+                      <td className="px-4 py-4 font-medium text-slate-900">{product.sku ? String(product.sku).padStart(6, '0') : '-'}</td>
                       <td className="px-4 py-4 text-slate-900">{product.name}</td>
                       <td className="px-4 py-4 text-slate-600">{category?.name || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{line?.name || '-'}</td>
