@@ -4591,18 +4591,29 @@ function ContractCard({
   const start = new Date(contract.startDate).getTime();
   const end = new Date(contract.endDate).getTime();
   const now = new Date().getTime();
-  const total = end - start;
-  const elapsed = Math.min(Math.max(now - start, 0), total);
-  const progressPercent = (elapsed / (total || 1)) * 100;
+  
+  const isValidDates = !isNaN(start) && !isNaN(end);
+  let progressPercent = 0;
+  if (isValidDates) {
+    const total = end - start;
+    const elapsed = Math.min(Math.max(now - start, 0), total);
+    progressPercent = (elapsed / (total || 1)) * 100;
+  }
 
   // Compensação progress (Royalties vs MG)
-  const mgProgress = Math.min((contract.totalRoyalties / (contract.minimumGuarantee || 1)) * 100, 100);
+  const mgValue = Number(contract.totalRoyalties) || 0;
+  const mgTotal = Number(contract.minimumGuarantee) || 1;
+  const mgProgress = Math.min((mgValue / mgTotal) * 100, 100);
 
   const durationStr = calculateDuration(contract.startDate, contract.endDate);
 
-  // Extract text color from statusColor to use as background for progress bar
-  const statusTextColorClass = contract.statusColor?.split(' ').find((c: string) => c.startsWith('text-'));
-  const progressBgClass = statusTextColorClass ? statusTextColorClass.replace('text-', 'bg-') : 'bg-emerald-600';
+  // Directly map status to background colors to ensure Tailwind includes the classes
+  // Using -700 to match the exact tone of the status text
+  let progressBgClass = 'bg-emerald-700';
+  if (contract.calculatedStatus === 'Ativo') progressBgClass = 'bg-emerald-700';
+  else if (contract.calculatedStatus === 'Ativo (sell-off)') progressBgClass = 'bg-amber-700';
+  else if (contract.calculatedStatus === 'Encerrado') progressBgClass = 'bg-red-700';
+  else if (contract.calculatedStatus === 'Aguardando') progressBgClass = 'bg-blue-700';
 
   return (
     <div className="bg-white rounded-[32px] border border-slate-200 p-6 shadow-sm flex flex-col justify-between h-full group hover:shadow-md transition-shadow">
