@@ -4600,17 +4600,21 @@ function ContractCard({
 
   const durationStr = calculateDuration(contract.startDate, contract.endDate);
 
+  // Extract text color from statusColor to use as background for progress bar
+  const statusTextColorClass = contract.statusColor?.split(' ').find((c: string) => c.startsWith('text-'));
+  const progressBgClass = statusTextColorClass ? statusTextColorClass.replace('text-', 'bg-') : 'bg-emerald-600';
+
   return (
-    <div className="bg-white rounded-[40px] border border-slate-200 p-8 shadow-sm flex flex-col justify-between h-full group hover:shadow-md transition-shadow">
-      <div className="space-y-6">
+    <div className="bg-white rounded-[32px] border border-slate-200 p-6 shadow-sm flex flex-col justify-between h-full group hover:shadow-md transition-shadow">
+      <div className="space-y-4">
         {/* Header */}
         <div className="flex justify-between items-start gap-4">
-          <div className="space-y-1">
-            <h2 className="text-3xl font-medium text-slate-900 tracking-tight">{contract.licenseName}</h2>
-            <div className="text-xl text-slate-400 font-light">{contract.contractNumber || '---'}</div>
+          <div className="space-y-0.5">
+            <h2 className="text-2xl font-medium text-slate-900 tracking-tight leading-tight">{contract.licenseName}</h2>
+            <div className="text-lg text-slate-400 font-light">{contract.contractNumber || '---'}</div>
           </div>
-          <div className="flex flex-col items-end gap-3">
-            <Badge className={cn("rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wider", contract.statusColor)}>
+          <div className="flex flex-col items-end gap-2">
+            <Badge className={cn("rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider", contract.statusColor)}>
               {contract.calculatedStatus}
             </Badge>
             <ContractDetailsDialog 
@@ -4620,7 +4624,7 @@ function ContractCard({
               products={products}
               contracts={contracts}
               trigger={
-                <button className="text-slate-400 hover:text-slate-600 underline text-sm underline-offset-4 decoration-slate-300">
+                <button className="text-slate-400 hover:text-slate-600 underline text-[11px] underline-offset-4 decoration-slate-300">
                   Ver detalhes
                 </button>
               }
@@ -4628,37 +4632,37 @@ function ContractCard({
           </div>
         </div>
 
-        <div className="border-t border-slate-100 pt-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl text-slate-500 font-normal">Vigência</h3>
-            <Calendar className="text-slate-400" size={24} />
+        <div className="border-t border-slate-100 pt-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-lg text-slate-500 font-normal">Vigência</h3>
+            <Calendar className="text-slate-400" size={20} />
           </div>
           
-          <div className="flex justify-between text-slate-400 text-sm mb-4 font-medium uppercase tracking-wide">
+          <div className="flex justify-between text-slate-400 text-[10px] mb-2 font-medium uppercase tracking-wide">
             <span>{durationStr}</span>
             <span>{contract.isPlurianual ? 'Plurianual' : 'Contrato'}</span>
           </div>
 
-          <div className="flex justify-between text-slate-600 text-lg mb-2">
+          <div className="flex justify-between text-slate-600 text-sm mb-2">
             <div>Início: <span className="text-slate-900 font-medium">{formatDateBR(contract.startDate)}</span></div>
             <div>Final: <span className="text-slate-900 font-medium">{formatDateBR(contract.endDate)}</span></div>
           </div>
 
           {/* Progress Bar */}
-          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-4">
-            <div className="h-full bg-emerald-100 rounded-full" style={{ width: `${progressPercent}%` }} />
+          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-3">
+            <div className={cn("h-full rounded-full transition-all duration-500", progressBgClass)} style={{ width: `${progressPercent}%` }} />
           </div>
 
-          <div className="flex justify-between text-slate-400 text-sm">
+          <div className="flex justify-between text-slate-400 text-[10px]">
             <span>Sell-Off: {contract.sellOffPeriod || 0} dias</span>
             <span>Final: <span className="text-slate-600 font-medium">{formatDateBR(contract.sellOffEndDate)}</span></span>
           </div>
         </div>
 
-        <div className="border-t border-slate-100 pt-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl text-slate-500 font-normal">Compensação</h3>
-            <Badge variant="secondary" className="bg-slate-50 text-slate-600 border-none px-4 py-1 rounded-lg text-xs font-bold font-mono">
+        <div className="border-t border-slate-100 pt-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-lg text-slate-500 font-normal">Compensação</h3>
+            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-4 py-1.5 rounded-lg text-sm font-bold font-mono">
                {contract.currency === 'Dólar' ? 'USD' : 
                 contract.currency === 'Real' ? 'BRL' : 
                 contract.currency === 'Euro' ? 'EUR' : 
@@ -4667,38 +4671,38 @@ function ContractCard({
           </div>
 
           <div className="grid grid-cols-2 mb-2">
-            <div className="space-y-1">
-              <div className="text-slate-400 text-xs font-bold uppercase tracking-wider">MG</div>
-              <div className="text-xl font-semibold text-slate-700">
+            <div className="space-y-0.5">
+              <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">MG</div>
+              <div className="text-lg font-semibold text-slate-700 leading-none">
                  {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
-            <div className="space-y-1 text-right">
-              <div className="text-slate-400 text-xs font-bold uppercase tracking-wider">Royalties</div>
-              <div className="text-xl font-semibold text-slate-700">
+            <div className="space-y-0.5 text-right">
+              <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Royalties</div>
+              <div className="text-lg font-semibold text-slate-700 leading-none">
                  {getCurrencySymbol(contract.currency || 'BRL')} {contract.totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           </div>
 
           {/* Progress Bar */}
-          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-6">
-            <div className="h-full bg-emerald-100 rounded-full" style={{ width: `${mgProgress}%` }} />
+          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-4">
+            <div className={cn("h-full rounded-full transition-all duration-500", progressBgClass)} style={{ width: `${mgProgress}%` }} />
           </div>
 
-          <div className="border-t border-slate-100 pt-6 space-y-4">
-            <div className="flex justify-between items-end border-b border-slate-100 pb-4">
-              <div className="space-y-1 text-slate-500 text-sm leading-relaxed">
+          <div className="border-t border-slate-100 pt-4 space-y-3">
+            <div className="flex justify-between items-end border-b border-slate-100 pb-3">
+              <div className="space-y-0.5 text-slate-400 text-[11px] leading-relaxed">
                 <div>Vendas líquidas</div>
                 <div>Compras líquidas</div>
                 <div>FOB</div>
               </div>
-              <div className="space-y-1 text-slate-600 text-sm font-medium text-center">
+              <div className="space-y-0.5 text-slate-600 text-[11px] font-medium text-center">
                  <div>{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(1))}% {contract.royaltyRateNetSales2 ? `e ${Number((contract.royaltyRateNetSales2 * 100).toFixed(1))}%` : ''}</div>
                  <div>{Number(((contract.royaltyRateNetPurchases || 0) * 100).toFixed(1))}%</div>
                  <div>{Number(((contract.royaltyRateFOB || 0) * 100).toFixed(1))}%</div>
               </div>
-              <div className="text-slate-500 text-sm text-right">
+              <div className="text-slate-400 text-[11px] text-right">
                 {contract.reportingFrequency || 'Trimestral'}
               </div>
             </div>
@@ -4707,7 +4711,7 @@ function ContractCard({
       </div>
 
       {/* Footer Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t border-transparent group-hover:border-slate-50">
+      <div className="flex justify-end gap-2 pt-2 border-t border-transparent group-hover:border-slate-50">
         {isAdmin && (
           <>
             <ContractDetailsDialog 
@@ -4718,8 +4722,8 @@ function ContractCard({
               contracts={contracts}
               initialIsEditing={true}
               trigger={
-                <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors">
-                  <Edit2 size={18} />
+                <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors">
+                  <Edit2 size={16} />
                 </button>
               }
             />
@@ -4730,8 +4734,8 @@ function ContractCard({
               products={products}
               contracts={contracts}
               trigger={
-                <button className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                  <Trash2 size={18} />
+                <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                  <Trash2 size={16} />
                 </button>
               }
             />
@@ -4885,7 +4889,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
       </div>
 
       {viewType === 'cards' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {sortedContracts.map((contract: any) => (
             <ContractCard 
               key={contract.id}
@@ -4898,7 +4902,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
             />
           ))}
           {sortedContracts.length === 0 && (
-            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-[40px]">
+            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-[32px]">
               Nenhum contrato encontrado para este filtro.
             </div>
           )}
