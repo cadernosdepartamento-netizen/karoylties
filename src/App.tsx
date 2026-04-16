@@ -33,7 +33,9 @@ import {
   ArrowUpDown,
   ChevronUp,
   ChevronDown,
-  CircleDollarSign
+  CircleDollarSign,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -566,6 +568,29 @@ const formatDateBR = (dateStr: string | undefined | null) => {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
   return date.toLocaleDateString('pt-BR');
+};
+
+const calculateDuration = (startStr: string, endStr: string) => {
+  if (!startStr || !endStr) return '-';
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return '-';
+
+  let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (end.getDate() < start.getDate()) {
+    months--;
+  }
+
+  if (months >= 12) {
+    const years = Math.floor(months / 12);
+    const remainingMonths = months % 12;
+    const yearStr = years === 1 ? 'ano' : 'anos';
+    if (remainingMonths === 0) return `${years} ${yearStr}`;
+    const monthStr = remainingMonths === 1 ? 'mês' : 'meses';
+    return `${years} ${yearStr} e ${remainingMonths} ${monthStr}`;
+  }
+  const monthStr = months === 1 ? 'mês' : 'meses';
+  return `${months} ${monthStr}`;
 };
 
 const getContractStatus = (contract: any) => {
@@ -1361,11 +1386,17 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   );
 }
 
-function ContractDetailsDialog({ contract, licenses, lines, products, contracts, trigger }: { contract: Contract, licenses: License[], lines: Line[], products: Product[], contracts: Contract[], trigger?: React.ReactNode }) {
+function ContractDetailsDialog({ contract, licenses, lines, products, contracts, trigger, initialIsEditing = false }: { contract: Contract, licenses: License[], lines: Line[], products: Product[], contracts: Contract[], trigger?: React.ReactNode, initialIsEditing?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(initialIsEditing);
   const [step, setStep] = useState(1);
   const totalSteps = 7;
+
+  useEffect(() => {
+    if (open) {
+      setIsEditing(initialIsEditing);
+    }
+  }, [open, initialIsEditing]);
   
   // Form States
   const [licenseId, setLicenseId] = useState(contract.licenseId);
@@ -4548,6 +4579,169 @@ function StatCard({ title, value, icon, trend, color }: any) {
   );
 }
 
+function ContractCard({ 
+  contract, 
+  licenses, 
+  lines, 
+  products, 
+  contracts, 
+  isAdmin 
+}: any) {
+  // calculate values
+  const start = new Date(contract.startDate).getTime();
+  const end = new Date(contract.endDate).getTime();
+  const now = new Date().getTime();
+  const total = end - start;
+  const elapsed = Math.min(Math.max(now - start, 0), total);
+  const progressPercent = (elapsed / (total || 1)) * 100;
+
+  // Compensação progress (Royalties vs MG)
+  const mgProgress = Math.min((contract.totalRoyalties / (contract.minimumGuarantee || 1)) * 100, 100);
+
+  const durationStr = calculateDuration(contract.startDate, contract.endDate);
+
+  return (
+    <div className="bg-white rounded-[40px] border border-slate-200 p-8 shadow-sm flex flex-col justify-between h-full group hover:shadow-md transition-shadow">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-start gap-4">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-medium text-slate-900 tracking-tight">{contract.licenseName}</h2>
+            <div className="text-xl text-slate-400 font-light">{contract.contractNumber || '---'}</div>
+          </div>
+          <div className="flex flex-col items-end gap-3">
+            <Badge className={cn("rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-wider", contract.statusColor)}>
+              {contract.calculatedStatus}
+            </Badge>
+            <ContractDetailsDialog 
+              contract={contract} 
+              licenses={licenses} 
+              lines={lines} 
+              products={products}
+              contracts={contracts}
+              trigger={
+                <button className="text-slate-400 hover:text-slate-600 underline text-sm underline-offset-4 decoration-slate-300">
+                  Ver detalhes
+                </button>
+              }
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl text-slate-500 font-normal">Vigência</h3>
+            <Calendar className="text-slate-400" size={24} />
+          </div>
+          
+          <div className="flex justify-between text-slate-400 text-sm mb-4 font-medium uppercase tracking-wide">
+            <span>{durationStr}</span>
+            <span>{contract.isPlurianual ? 'Plurianual' : 'Contrato'}</span>
+          </div>
+
+          <div className="flex justify-between text-slate-600 text-lg mb-2">
+            <div>Início: <span className="text-slate-900 font-medium">{formatDateBR(contract.startDate)}</span></div>
+            <div>Final: <span className="text-slate-900 font-medium">{formatDateBR(contract.endDate)}</span></div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-4">
+            <div className="h-full bg-emerald-100 rounded-full" style={{ width: `${progressPercent}%` }} />
+          </div>
+
+          <div className="flex justify-between text-slate-400 text-sm">
+            <span>Sell-Off: {contract.sellOffPeriod || 0} dias</span>
+            <span>Final: <span className="text-slate-600 font-medium">{formatDateBR(contract.sellOffEndDate)}</span></span>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl text-slate-500 font-normal">Compensação</h3>
+            <Badge variant="secondary" className="bg-slate-50 text-slate-600 border-none px-4 py-1 rounded-lg text-xs font-bold font-mono">
+               {contract.currency === 'Dólar' ? 'USD' : 
+                contract.currency === 'Real' ? 'BRL' : 
+                contract.currency === 'Euro' ? 'EUR' : 
+                (contract.currency || 'BRL')}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 mb-2">
+            <div className="space-y-1">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-wider">MG</div>
+              <div className="text-xl font-semibold text-slate-700">
+                 {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div className="space-y-1 text-right">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-wider">Royalties</div>
+              <div className="text-xl font-semibold text-slate-700">
+                 {getCurrencySymbol(contract.currency || 'BRL')} {contract.totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden mb-6">
+            <div className="h-full bg-emerald-100 rounded-full" style={{ width: `${mgProgress}%` }} />
+          </div>
+
+          <div className="border-t border-slate-100 pt-6 space-y-4">
+            <div className="flex justify-between items-end border-b border-slate-100 pb-4">
+              <div className="space-y-1 text-slate-500 text-sm leading-relaxed">
+                <div>Vendas líquidas</div>
+                <div>Compras líquidas</div>
+                <div>FOB</div>
+              </div>
+              <div className="space-y-1 text-slate-600 text-sm font-medium text-center">
+                 <div>{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(1))}% {contract.royaltyRateNetSales2 ? `e ${Number((contract.royaltyRateNetSales2 * 100).toFixed(1))}%` : ''}</div>
+                 <div>{Number(((contract.royaltyRateNetPurchases || 0) * 100).toFixed(1))}%</div>
+                 <div>{Number(((contract.royaltyRateFOB || 0) * 100).toFixed(1))}%</div>
+              </div>
+              <div className="text-slate-500 text-sm text-right">
+                {contract.reportingFrequency || 'Trimestral'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Actions */}
+      <div className="flex justify-end gap-3 pt-4 border-t border-transparent group-hover:border-slate-50">
+        {isAdmin && (
+          <>
+            <ContractDetailsDialog 
+              contract={contract} 
+              licenses={licenses} 
+              lines={lines} 
+              products={products}
+              contracts={contracts}
+              initialIsEditing={true}
+              trigger={
+                <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors">
+                  <Edit2 size={18} />
+                </button>
+              }
+            />
+            <ContractDetailsDialog 
+              contract={contract} 
+              licenses={licenses} 
+              lines={lines} 
+              products={products}
+              contracts={contracts}
+              trigger={
+                <button className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                  <Trash2 size={18} />
+                </button>
+              }
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ContractsView({ contracts, licenses, reports, lines, products, isAdmin }: { 
   contracts: Contract[], 
   licenses: License[], 
@@ -4557,6 +4751,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
   isAdmin: boolean
 }) {
   const [statusFilter, setStatusFilter] = useState('Todos');
+  const [viewType, setViewType] = useState<'cards' | 'table'>('cards');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' | null }>({ key: 'license', direction: 'asc' });
 
   const processedContracts = contracts.map((contract: any) => {
@@ -4651,159 +4846,205 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
   };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm inline-block">
-        <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-          <TabsList className="bg-transparent gap-1 h-9">
-            <TabsTrigger value="Todos" className="rounded-lg data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none px-4">Todos</TabsTrigger>
-            <TabsTrigger value="Ativo" className="rounded-lg data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600 data-[state=active]:shadow-none px-4">Ativos</TabsTrigger>
-            <TabsTrigger value="Ativo (sell-off)" className="rounded-lg data-[state=active]:bg-amber-50 data-[state=active]:text-amber-600 data-[state=active]:shadow-none px-4">Sell-off</TabsTrigger>
-            <TabsTrigger value="Encerrado" className="rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-600 data-[state=active]:shadow-none px-4">Encerrados</TabsTrigger>
-            <TabsTrigger value="Aguardando" className="rounded-lg data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 data-[state=active]:shadow-none px-4">Aguardando</TabsTrigger>
-          </TabsList>
-        </Tabs>
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+          <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+            <TabsList className="bg-transparent gap-1 h-8">
+              <TabsTrigger value="Todos" className="rounded-lg data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-none px-4 text-xs font-medium">Todos</TabsTrigger>
+              <TabsTrigger value="Ativo" className="rounded-lg data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-600 data-[state=active]:shadow-none px-4 text-xs font-medium">Ativos</TabsTrigger>
+              <TabsTrigger value="Ativo (sell-off)" className="rounded-lg data-[state=active]:bg-amber-50 data-[state=active]:text-amber-600 data-[state=active]:shadow-none px-4 text-xs font-medium">Sell-off</TabsTrigger>
+              <TabsTrigger value="Encerrado" className="rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-600 data-[state=active]:shadow-none px-4 text-xs font-medium">Encerrados</TabsTrigger>
+              <TabsTrigger value="Aguardando" className="rounded-lg data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600 data-[state=active]:shadow-none px-4 text-xs font-medium">Aguardando</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+          <button 
+            onClick={() => setViewType('cards')}
+            className={cn(
+              "p-2 rounded-lg transition-colors",
+              viewType === 'cards' ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600"
+            )}
+            title="Visualização em Cards"
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <button 
+            onClick={() => setViewType('table')}
+            className={cn(
+              "p-2 rounded-lg transition-colors",
+              viewType === 'table' ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-600"
+            )}
+            title="Visualização em Tabela"
+          >
+            <List size={18} />
+          </button>
+        </div>
       </div>
 
-      <Card className="border-slate-200 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Contratos de Licenciamento</CardTitle>
-          <CardDescription>Gerencie seus contratos ativos e históricos</CardDescription>
+      {viewType === 'cards' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-8">
+          {sortedContracts.map((contract: any) => (
+            <ContractCard 
+              key={contract.id}
+              contract={contract}
+              licenses={licenses}
+              lines={lines}
+              products={products}
+              contracts={contracts}
+              isAdmin={isAdmin}
+            />
+          ))}
+          {sortedContracts.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-[40px]">
+              Nenhum contrato encontrado para este filtro.
+            </div>
+          )}
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="border-t border-slate-200 overflow-x-auto w-full">
-          <table className="w-full text-sm text-left min-w-[1000px] border-separate border-spacing-0">
-            <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 sticky top-0 z-30">
-              <tr>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider sticky left-0 z-40 bg-slate-50 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('license')}
-                >
-                  <div className="flex items-center">Licenciador <SortIcon column="license" /></div>
-                </th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">ID Contrato</th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('status')}
-                >
-                  <div className="flex items-center">Status <SortIcon column="status" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('startDate')}
-                >
-                  <div className="flex items-center">Início <SortIcon column="startDate" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('endDate')}
-                >
-                  <div className="flex items-center">Término <SortIcon column="endDate" /></div>
-                </th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">Sell-off (Per.)</th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('sellOffEndDate')}
-                >
-                  <div className="flex items-center">Sell-off (Fim) <SortIcon column="sellOffEndDate" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('currency')}
-                >
-                  <div className="flex items-center">Moeda <SortIcon column="currency" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('mg')}
-                >
-                  <div className="flex items-center">MG <SortIcon column="mg" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('royalties')}
-                >
-                  <div className="flex items-center">Royalties <SortIcon column="royalties" /></div>
-                </th>
-                <th 
-                  className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => handleSort('balance')}
-                >
-                  <div className="flex items-center">Saldo <SortIcon column="balance" /></div>
-                </th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 1</th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 2</th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Compras</th>
-                <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% FOB</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {sortedContracts.map((contract: any) => {
-                return (
-                  <tr key={contract.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-3 py-4 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white group-hover:bg-slate-50 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] transition-colors">
-                      <ContractDetailsDialog 
-                        contract={contract} 
-                        licenses={licenses} 
-                        lines={lines} 
-                        products={products}
-                        contracts={contracts}
-                        trigger={
-                          <button className="text-blue-600 hover:text-blue-800 hover:underline text-left font-semibold">
-                            {contract.licenseName}
-                          </button>
-                        }
-                      />
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{contract.contractNumber}</td>
-                    <td className="px-3 py-4 whitespace-nowrap">
-                      <Badge className={contract.statusColor}>
-                        {contract.calculatedStatus}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">
-                      {formatDateBR(contract.startDate)}
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">
-                      {formatDateBR(contract.endDate)}
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{contract.sellOffPeriod || '-'}</td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">
-                      {formatDateBR(contract.sellOffEndDate)}
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">
-                      {contract.currency === 'Dólar' ? 'USD' : 
-                       contract.currency === 'Real' ? 'BRL' : 
-                       contract.currency === 'Euro' ? 'EUR' : 
-                       (contract.currency || 'BRL')}
-                    </td>
-                    <td className="px-3 py-4 font-semibold text-slate-900 whitespace-nowrap">
-                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-4 font-semibold text-emerald-600 whitespace-nowrap">
-                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className={`px-3 py-4 font-semibold whitespace-nowrap ${contract.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(2))}%</td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{contract.royaltyRateNetSales2 ? Number((contract.royaltyRateNetSales2 * 100).toFixed(2)) : '-'}%</td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{contract.royaltyRateNetPurchases ? Number((contract.royaltyRateNetPurchases * 100).toFixed(2)) : '-'}%</td>
-                    <td className="px-3 py-4 text-slate-600 whitespace-nowrap">{contract.royaltyRateFOB ? Number((contract.royaltyRateFOB * 100).toFixed(2)) : '-'}%</td>
+      ) : (
+        <Card className="border-slate-200 shadow-sm overflow-hidden rounded-xl">
+          <CardHeader className="flex flex-row items-center justify-between bg-white border-b border-slate-100">
+            <div>
+              <CardTitle className="text-lg">Contratos de Licenciamento</CardTitle>
+              <CardDescription>Visualização em formato de tabela</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-sm text-left min-w-[1000px] border-separate border-spacing-0">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 sticky top-0 z-30">
+                  <tr>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider sticky left-0 z-40 bg-slate-50 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('license')}
+                    >
+                      <div className="flex items-center">Licenciador <SortIcon column="license" /></div>
+                    </th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">ID Contrato</th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center">Status <SortIcon column="status" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('startDate')}
+                    >
+                      <div className="flex items-center">Início <SortIcon column="startDate" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('endDate')}
+                    >
+                      <div className="flex items-center">Término <SortIcon column="endDate" /></div>
+                    </th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">Sell-off (Per.)</th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('sellOffEndDate')}
+                    >
+                      <div className="flex items-center">Sell-off (Fim) <SortIcon column="sellOffEndDate" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('currency')}
+                    >
+                      <div className="flex items-center">Moeda <SortIcon column="currency" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('mg')}
+                    >
+                      <div className="flex items-center">MG <SortIcon column="mg" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('royalties')}
+                    >
+                      <div className="flex items-center">Royalties <SortIcon column="royalties" /></div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                      onClick={() => handleSort('balance')}
+                    >
+                      <div className="flex items-center">Saldo <SortIcon column="balance" /></div>
+                    </th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 1</th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 2</th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Compras</th>
+                    <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% FOB</th>
                   </tr>
-                );
-              })}
-              {contracts.length === 0 && (
-                <tr>
-                  <td colSpan={15} className="px-3 py-8 text-center text-slate-400">Nenhum contrato cadastrado.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {sortedContracts.map((contract: any) => {
+                    return (
+                      <tr key={contract.id} className="hover:bg-slate-50 transition-colors group text-xs">
+                        <td className="px-3 py-3 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white group-hover:bg-slate-50 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] transition-colors">
+                          <ContractDetailsDialog 
+                            contract={contract} 
+                            licenses={licenses} 
+                            lines={lines} 
+                            products={products}
+                            contracts={contracts}
+                            trigger={
+                              <button className="text-blue-600 hover:text-blue-800 hover:underline text-left font-semibold">
+                                {contract.licenseName}
+                              </button>
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{contract.contractNumber}</td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <Badge className={cn("text-[10px] py-0", contract.statusColor)}>
+                            {contract.calculatedStatus}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                          {formatDateBR(contract.startDate)}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                          {formatDateBR(contract.endDate)}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{contract.sellOffPeriod || '-'}</td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                          {formatDateBR(contract.sellOffEndDate)}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                          {contract.currency === 'Dólar' ? 'USD' : 
+                           contract.currency === 'Real' ? 'BRL' : 
+                           contract.currency === 'Euro' ? 'EUR' : 
+                           (contract.currency || 'BRL')}
+                        </td>
+                        <td className="px-3 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                          {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-3 font-semibold text-emerald-600 whitespace-nowrap">
+                          {getCurrencySymbol(contract.currency || 'BRL')} {contract.totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className={`px-3 py-3 font-semibold whitespace-nowrap ${contract.balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {getCurrencySymbol(contract.currency || 'BRL')} {contract.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(2))}%</td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{contract.royaltyRateNetSales2 ? Number((contract.royaltyRateNetSales2 * 100).toFixed(2)) : '-'}%</td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{contract.royaltyRateNetPurchases ? Number((contract.royaltyRateNetPurchases * 100).toFixed(2)) : '-'}%</td>
+                        <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{contract.royaltyRateFOB ? Number((contract.royaltyRateFOB * 100).toFixed(2)) : '-'}%</td>
+                      </tr>
+                    );
+                  })}
+                  {sortedContracts.length === 0 && (
+                    <tr>
+                      <td colSpan={15} className="px-3 py-8 text-center text-slate-400">Nenhum contrato cadastrado.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
