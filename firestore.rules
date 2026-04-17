@@ -4,10 +4,10 @@
 //
 // Collection: licenses
 // Fields:
-//   - fantasyName: string (required)
-//   - legalName: string (required)
-//   - agent: string (optional)
-//   - description: string (optional)
+//   - nomelicenciador: string (required)
+//   - nomejurlicenciador: string (required)
+//   - nomeagente: string (optional)
+//   - descricaolicenciador: string (optional)
 //
 // Collection: lines
 // Fields:

@@ -10,9 +10,9 @@ import { Edit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Types
-interface License { id: string; fantasyName: string; legalName: string; }
-interface Line { id: string; name: string; licenseId: string; }
-interface ProductCategory { id: string; name: string; }
+interface License { id: string; nomelicenciador: string; nomejurlicenciador: string; nomeagente?: string; descricaolicenciador?: string; }
+interface Line { id: string; nomelinha: string; licenseId: string; }
+interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 
 export function BatchEditProductsDialog({ selectedProductIds, lines, categories, licenses, onComplete }: { selectedProductIds: string[], lines: Line[], categories: ProductCategory[], licenses: License[], onComplete: () => void }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +53,7 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Edit2 size={16} /> Editar Selecionados
         </button>
@@ -71,12 +71,14 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
             <Label>Licenciador</Label>
             <Select onValueChange={setLicenseId} value={licenseId}>
               <SelectTrigger>
-                <SelectValue placeholder="Manter atual" />
+                <SelectValue placeholder="Manter atual">
+                  {licenseId === 'none' ? 'Remover Licenciador' : (licenses.find(l => l.id === licenseId)?.nomelicenciador)}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Remover Licenciador</SelectItem>
-                {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                {[...licenses].sort((a, b) => (a.nomelicenciador || '').localeCompare(b.nomelicenciador || '')).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -86,11 +88,13 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
             <Label>Linha</Label>
             <Select onValueChange={setLineId} value={lineId}>
               <SelectTrigger>
-                <SelectValue placeholder="Manter atual" />
+                <SelectValue placeholder="Manter atual">
+                  {lines.find(l => l.id === lineId)?.nomelinha}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => (a.nomelinha || '').localeCompare(b.nomelinha || '')).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -100,12 +104,14 @@ export function BatchEditProductsDialog({ selectedProductIds, lines, categories,
             <Label>Categoria</Label>
             <Select onValueChange={setCategoryId} value={categoryId}>
               <SelectTrigger>
-                <SelectValue placeholder="Manter atual" />
+                <SelectValue placeholder="Manter atual">
+                  {categoryId === 'none' ? 'Remover Categoria' : (categories.find(c => c.id === categoryId)?.nomeCategoriaProduto)}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Remover Categoria</SelectItem>
-                {[...categories].sort((a,b) => (a.name || '').localeCompare(b.name || '')).map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                {[...categories].sort((a,b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || '')).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

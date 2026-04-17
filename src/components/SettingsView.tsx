@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 import { updatePassword, updateProfile } from 'firebase/auth';
 import { db } from '../firebase';
 import { User } from 'firebase/auth';
@@ -20,6 +20,7 @@ interface UserProfile {
 
 export function SettingsView({ currentUser, isAdmin }: { currentUser: User | null, isAdmin: boolean }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -45,6 +46,35 @@ export function SettingsView({ currentUser, isAdmin }: { currentUser: User | nul
     return () => unsubscribe();
   }, [currentUser, isAdmin]);
 
+  const handleClearDatabase = async () => {
+    if (!isAdmin) return;
+    if (!window.confirm('TEM CERTEZA? Isso irá apagar TODOS os dados de licenciadores, linhas, produtos, contratos, pagamentos e relatórios. Esta ação não pode ser desfeita.')) return;
+
+    setIsClearing(true);
+    try {
+      const collectionsToClear = ['licenses', 'lines', 'products', 'contracts', 'reports', 'payments', 'productCategories'];
+      for (const colName of collectionsToClear) {
+        const querySnapshot = await getDocs(collection(db, colName));
+        // Delete in batches of 500 (Firestore limit)
+        const docs = querySnapshot.docs;
+        for (let i = 0; i < docs.length; i += 500) {
+          const batch = writeBatch(db);
+          const chunk = docs.slice(i, i + 500);
+          chunk.forEach((docRef) => {
+            batch.delete(docRef.ref);
+          });
+          await batch.commit();
+        }
+      }
+      toast.success('Banco de dados limpo com sucesso!');
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Erro ao limpar banco de dados: ' + error.message);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <Card className="border-slate-200 shadow-sm">
@@ -60,6 +90,31 @@ export function SettingsView({ currentUser, isAdmin }: { currentUser: User | nul
           </div>
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <Card className="border-red-200 shadow-sm bg-red-50/30">
+          <CardHeader>
+            <CardTitle className="text-red-800">Zona de Perigo</CardTitle>
+            <CardDescription>Ações irreversíveis do sistema.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 border border-red-200 rounded-lg bg-white">
+              <div>
+                <h4 className="font-semibold text-slate-900">Limpar Banco de Dados</h4>
+                <p className="text-sm text-slate-500">Remove todos os licenciadores, produtos, contratos e pagamentos. Mantém apenas os usuários.</p>
+              </div>
+              <Button 
+                variant="destructive" 
+                onClick={handleClearDatabase} 
+                className="whitespace-nowrap"
+                disabled={isClearing}
+              >
+                {isClearing ? 'Limpando...' : 'Apagar Tudo'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

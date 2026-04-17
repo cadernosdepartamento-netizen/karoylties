@@ -5,12 +5,12 @@
       "description": "Empresa ou entidade licenciadora.",
       "type": "object",
       "properties": {
-        "fantasyName": { "type": "string", "description": "Licenciador (Nome fantasia)" },
-        "legalName": { "type": "string", "description": "Licenciador (Nome jurídico)" },
-        "agent": { "type": "string", "description": "Administradora/Agente" },
-        "description": { "type": "string", "description": "Descrição opcional" }
+        "nomelicenciador": { "type": "string", "description": "Licenciador (Nome)" },
+        "nomejurlicenciador": { "type": "string", "description": "Licenciador (Nome jurídico)" },
+        "nomeagente": { "type": "string", "description": "Administradora/Agente" },
+        "descricaolicenciador": { "type": "string", "description": "Descrição opcional" }
       },
-      "required": ["fantasyName", "legalName"]
+      "required": ["nomelicenciador", "nomejurlicenciador"]
     },
     "Line": {
       "title": "Linha",
@@ -18,9 +18,9 @@
       "type": "object",
       "properties": {
         "licenseId": { "type": "string", "description": "ID da licença pai" },
-        "name": { "type": "string", "description": "Nome da linha/marca" }
+        "nomelinha": { "type": "string", "description": "Nome da linha/marca" }
       },
-      "required": ["licenseId", "name"]
+      "required": ["licenseId", "nomelinha"]
     },
     "Product": {
       "title": "Produto",
@@ -93,9 +93,9 @@
       "description": "Categorias para classificação de produtos.",
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "Nome da categoria" }
+        "nomeCategoriaProduto": { "type": "string", "description": "Nome da categoria" }
       },
-      "required": ["name"]
+      "required": ["nomeCategoriaProduto"]
     },
     "User": {
       "title": "Usuário",

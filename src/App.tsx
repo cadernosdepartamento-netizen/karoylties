@@ -36,7 +36,8 @@ import {
   ChevronDown,
   CircleDollarSign,
   LayoutGrid,
-  List
+  List,
+  Pencil
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -75,15 +76,15 @@ import { BatchEditProductsDialog } from './components/BatchEditProductsDialog';
 // Types
 interface License { 
   id: string; 
-  fantasyName: string; 
-  legalName: string; 
-  agent?: string; 
-  description?: string; 
+  nomelicenciador: string; 
+  nomejurlicenciador: string; 
+  nomeagente?: string; 
+  descricaolicenciador?: string;
 }
 interface Line { 
   id: string; 
   licenseId: string; 
-  name: string; 
+  nomelinha: string; 
   cnpj?: string;
   codRvp?: string;
   status?: string;
@@ -101,7 +102,7 @@ interface Product {
   launchYear?: number;
   ean?: string;
 }
-interface ProductCategory { id: string; name: string; }
+interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface ContractYear {
   yearNumber: number;
   startDate: string;
@@ -750,27 +751,27 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
 
 function AddLicensorDialog() {
   const [open, setOpen] = useState(false);
-  const [fantasyName, setFantasyName] = useState('');
-  const [legalName, setLegalName] = useState('');
-  const [agent, setAgent] = useState('');
-  const [description, setDescription] = useState('');
+  const [nomelicenciador, setNomelicenciador] = useState('');
+  const [nomejurlicenciador, setNomejurlicenciador] = useState('');
+  const [nomeagente, setNomeagente] = useState('');
+  const [descricaolicenciador, setDescricaolicenciador] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await addDoc(collection(db, 'licenses'), { 
-        fantasyName, 
-        legalName, 
-        agent, 
-        description, 
+        nomelicenciador, 
+        nomejurlicenciador, 
+        nomeagente, 
+        descricaolicenciador, 
         createdAt: serverTimestamp() 
       });
       toast.success('Licenciador cadastrado com sucesso!');
       setOpen(false);
-      setFantasyName('');
-      setLegalName('');
-      setAgent('');
-      setDescription('');
+      setNomelicenciador('');
+      setNomejurlicenciador('');
+      setNomeagente('');
+      setDescricaolicenciador('');
     } catch (err) {
       toast.error('Erro ao cadastrar licenciador.');
     }
@@ -779,7 +780,7 @@ function AddLicensorDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Licenciador
@@ -793,20 +794,20 @@ function AddLicensorDialog() {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label htmlFor="fantasyName">Nome Fantasia</Label>
-            <Input id="fantasyName" value={fantasyName} onChange={(e) => setFantasyName(e.target.value)} required />
+            <Label htmlFor="nomelicenciador">Nome</Label>
+            <Input id="nomelicenciador" value={nomelicenciador} onChange={(e) => setNomelicenciador(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="legalName">Nome Jurídico</Label>
-            <Input id="legalName" value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
+            <Label htmlFor="nomejurlicenciador">Nome Jurídico</Label>
+            <Input id="nomejurlicenciador" value={nomejurlicenciador} onChange={(e) => setNomejurlicenciador(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="agent">Administradora/Agente</Label>
-            <Input id="agent" value={agent} onChange={(e) => setAgent(e.target.value)} />
+            <Label htmlFor="nomeagente">Administradora/Agente</Label>
+            <Input id="nomeagente" value={nomeagente} onChange={(e) => setNomeagente(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="desc">Descrição (Opcional)</Label>
-            <Input id="desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Label htmlFor="descricaolicenciador">Descrição (Opcional)</Label>
+            <Input id="descricaolicenciador" value={descricaolicenciador} onChange={(e) => setDescricaolicenciador(e.target.value)} />
           </div>
           <DialogFooter>
             <Button type="submit">Salvar Licenciador</Button>
@@ -832,7 +833,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
   const downloadTemplate = () => {
     const wsData = [
       templateColumns,
-      [licenses[0]?.fantasyName || "Exemplo Licenciador", "Exemplo Linha", "Licenciada", "Ativa"]
+      [licenses[0]?.nomelicenciador || "Exemplo Licenciador", "Exemplo Linha", "Licenciada", "Ativa"]
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
@@ -841,7 +842,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
     // Add instructions sheet
     const instData = [
       ["Instruções de Preenchimento"],
-      ["1. Licenciador: Deve ser o 'Nome Fantasia' de um licenciador já cadastrado no sistema."],
+      ["1. Licenciador: Deve ser o 'Nome' de um licenciador já cadastrado no sistema."],
       ["2. Nome da linha: Nome descritivo da linha ou marca."],
       ["3. Tipo de marca: Deve ser exatamente 'Própria' ou 'Licenciada'."],
       ["4. Status: Deve ser exatamente 'Ativa' ou 'Inativa'."],
@@ -900,8 +901,9 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
           }
 
           const license = licenses.find(l => 
-            String(l.fantasyName || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-            String(l.legalName || "").trim().toLowerCase() === licensorName.toLowerCase()
+            String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+            String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+            String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
           );
           if (!license) {
             console.warn(`Licenciador não encontrado: ${licensorName}`);
@@ -913,7 +915,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
           const status = statusRaw?.toString() || 'Ativa';
 
           await addDoc(collection(db, 'lines'), {
-            name: lineName.toString(),
+            nomelinha: lineName.toString(),
             licenseId: license.id,
             brandType,
             status,
@@ -937,7 +939,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Upload size={18} /> Importar Linhas
         </button>
@@ -981,7 +983,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
 function AddLineDialog({ licenses }: { licenses: License[] }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
+  const [nomelinha, setNomelinha] = useState('');
   const [licenseId, setLicenseId] = useState('');
   const [status, setStatus] = useState('Ativa');
   const [brandType, setBrandType] = useState<'própria' | 'licenciada'>('licenciada');
@@ -991,7 +993,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
     if (!licenseId) return toast.error('Selecione um licenciador.');
     try {
       await addDoc(collection(db, 'lines'), { 
-        name, 
+        nomelinha: nomelinha, 
         licenseId, 
         status,
         brandType,
@@ -999,7 +1001,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
       });
       toast.success('Linha cadastrada com sucesso!');
       setOpen(false);
-      setName('');
+      setNomelinha('');
       setLicenseId('');
       setStatus('Ativa');
       setBrandType('licenciada');
@@ -1011,7 +1013,7 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Nova Linha
@@ -1025,21 +1027,25 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label>Licenciador Pai</Label>
+            <Label>Licenciador</Label>
             <Select onValueChange={setLicenseId} value={licenseId}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione o licenciador" />
+                <SelectValue placeholder="Selecione o licenciador">
+                  {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pname">Nome da Linha</Label>
-            <Input id="pname" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Label htmlFor="add-nomelinha">Nome da linha</Label>
+            <Input id="add-nomelinha" value={nomelinha} onChange={(e) => setNomelinha(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -1090,7 +1096,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
   const downloadTemplate = () => {
     const wsData = [
       templateColumns,
-      [licenses[0]?.fantasyName || "Exemplo Licenciador", lines[0]?.name || "Exemplo Linha", "SKU123", "Exemplo Produto", categories[0]?.name || "Exemplo Categoria", "2024", "7891234567890"]
+      [licenses[0]?.nomelicenciador || "Exemplo Licenciador", lines[0]?.nomelinha || "Exemplo Linha", "SKU123", "Exemplo Produto", categories[0]?.nomeCategoriaProduto || "Exemplo Categoria", "2024", "7891234567890"]
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
@@ -1098,7 +1104,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
     
     const instData = [
       ["Instruções de Preenchimento"],
-      ["1. Licenciador: Deve ser o 'Nome Fantasia' de um licenciador já cadastrado no sistema."],
+      ["1. Licenciador: Deve ser o 'Nome' de um licenciador já cadastrado no sistema."],
       ["2. Linha: Deve ser o nome de uma linha já cadastrada e vinculada ao licenciador."],
       ["3. Código: Código SKU do produto."],
       ["4. Nome: Nome descritivo do produto."],
@@ -1165,14 +1171,14 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
           let licenseId = '';
           if (licensorName) {
             const license = licenses.find(l => 
-              String(l.fantasyName || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-              String(l.legalName || "").trim().toLowerCase() === licensorName.toLowerCase()
+              String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+              String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
             );
             if (license) licenseId = license.id;
           }
 
           const line = lines.find(l => 
-            String(l.name || "").trim().toLowerCase() === lineName.toLowerCase() &&
+            String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
             (!licenseId || l.licenseId === licenseId)
           );
 
@@ -1184,7 +1190,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
 
           let categoryId = '';
           if (categoryName) {
-            const category = categories.find(c => String(c.name || "").trim().toLowerCase() === categoryName.toLowerCase());
+            const category = categories.find(c => String(c.nomeCategoriaProduto || "").trim().toLowerCase() === categoryName.toLowerCase());
             if (category) categoryId = category.id;
           }
 
@@ -1218,7 +1224,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
           <Upload size={18} /> Importar Produtos
         </button>
@@ -1273,6 +1279,16 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const [launchYear, setLaunchYear] = useState('');
   const [ean, setEan] = useState('');
 
+  const handleLineChange = (id: string) => {
+    setLineId(id);
+    const line = lines.find(l => l.id === id);
+    if (line) {
+      setLicenseId(line.licenseId);
+    } else {
+      setLicenseId('');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lineId) return toast.error('Selecione uma linha.');
@@ -1304,7 +1320,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Produto
@@ -1319,30 +1335,28 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Licenciador</Label>
-              <Select onValueChange={(v) => { setLicenseId(v); setLineId(''); }} value={licenseId}>
+              <Label>Linha</Label>
+              <Select onValueChange={handleLineChange} value={lineId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
+                  <SelectValue placeholder="Selecione">
+                    {lines.find(l => l.id === lineId)?.nomelinha}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...lines].sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Linha Pai</Label>
-              <Select onValueChange={setLineId} value={lineId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {lines.filter(l => !licenseId || l.licenseId === licenseId).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Licenciador</Label>
+              <Input 
+                value={licenses.find(l => l.id === licenseId)?.nomelicenciador || ''} 
+                readOnly 
+                className="bg-slate-50 cursor-not-allowed" 
+                placeholder="Selecione uma linha primeiro"
+              />
             </div>
           </div>
           <div className="space-y-2">
@@ -1364,11 +1378,13 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
               <Label>Categoria</Label>
               <Select onValueChange={setCategoryId} value={categoryId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
+                  <SelectValue placeholder="Selecione">
+                    {categories.find(c => c.id === categoryId)?.nomeCategoriaProduto}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...categories].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                  {[...categories].sort((a, b) => (a.nomeCategoriaProduto || a.id).localeCompare(b.nomeCategoriaProduto || b.id)).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1677,7 +1693,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setIsEditing(false); }}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           trigger || (
             <button className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-2")}>
@@ -1755,10 +1771,14 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                 <div className="space-y-2 col-span-2">
                   <Label>Licenciador</Label>
                   <Select onValueChange={setLicenseId} value={licenseId}>
-                    <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o licenciador">
+                        {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
-                      {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                      {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                        <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -2196,20 +2216,23 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                 <div className="space-y-2">
                   <Label>Linhas Vinculadas</Label>
                   <div className="flex flex-wrap gap-2 p-4 border rounded-lg bg-slate-50">
-                    {lines.filter(l => l.licenseId === licenseId).map(l => (
-                      <Badge 
-                        key={l.id} 
-                        variant={selectedLines.includes(l.id) ? "default" : "outline"}
-                        className="cursor-pointer py-1.5 px-3"
-                        onClick={() => {
-                          setSelectedLines(prev => 
-                            prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev, l.id]
-                          );
-                        }}
-                      >
-                        {l.name}
-                      </Badge>
-                    ))}
+                    {lines
+                      .filter(l => l.licenseId === licenseId)
+                      .sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id))
+                      .map(l => (
+                        <Badge 
+                          key={l.id} 
+                          variant={selectedLines.includes(l.id) ? "default" : "outline"}
+                          className="cursor-pointer py-1.5 px-3"
+                          onClick={() => {
+                            setSelectedLines(prev => 
+                              prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev, l.id]
+                            );
+                          }}
+                        >
+                          {l.nomelinha || `ID: ${l.id.slice(0,5)}`}
+                        </Badge>
+                      ))}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -2320,8 +2343,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
               <div className="grid grid-cols-4 gap-6">
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Licenciador</p>
-                  <p className="text-sm font-semibold text-slate-900">{license?.fantasyName}</p>
-                  <p className="text-xs text-slate-500">{license?.legalName}</p>
+                  <p className="text-sm font-semibold text-slate-900">{license?.nomelicenciador || (contract.licenseId ? `ID: ${contract.licenseId.slice(0, 5)}` : '-')}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Contrato</p>
@@ -2532,7 +2554,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Linhas Vinculadas</p>
                   <div className="flex flex-wrap gap-2">
                     {linkedLines.map(l => (
-                      <Badge key={l.id} variant="outline" className="bg-white border-slate-200 text-slate-700">{l.name}</Badge>
+                      <Badge key={l.id} variant="outline" className="bg-white border-slate-200 text-slate-700">{l.nomelinha || `ID: ${l.id.slice(0, 5)}`}</Badge>
                     ))}
                     {linkedLines.length === 0 && <span className="text-xs text-slate-400 italic">Nenhuma linha vinculada</span>}
                   </div>
@@ -2549,7 +2571,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l-2 border-blue-200 pl-2">{category}</p>
                     <div className="flex flex-wrap gap-1.5">
                       {products.map(p => (
-                        <Badge key={p.id} variant="secondary" className="bg-slate-100 text-slate-600 border-none text-[10px] py-0 px-2 h-5">{p.name}</Badge>
+                        <Badge key={p.id} variant="secondary" className="bg-slate-100 text-slate-600 border-none text-[10px] py-0 px-2 h-5">{p.name || `ID: ${p.id.slice(0, 5)}`}</Badge>
                       ))}
                     </div>
                   </div>
@@ -2706,26 +2728,26 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
 
           try {
             let license = licenses.find(l => 
-              String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
-              String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
+              String(l.nomelicenciador || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+              String(l.nomejurlicenciador || "").trim().toLowerCase() === licenseName.toLowerCase()
             );
             let licenseId = license?.id;
 
-            if (!licenseId) {
-              console.log(`Licenciador '${licenseName}' não encontrada. Criando nova...`);
-              const newLicenseRef = await addDoc(collection(db, 'licenses'), {
-                fantasyName: licenseName,
-                legalName: String(getVal(["Licenciador (Nome jurídico)", "Nome Jurídico"]) || licenseName).trim(),
-                agent: String(getVal(["Administradora/Agente", "Agente"]) || "").trim(),
-                createdAt: serverTimestamp()
-              });
-              licenseId = newLicenseRef.id;
+              if (!licenseId) {
+                console.log(`Licenciador '${licenseName}' não encontrada. Criando nova...`);
+                const newLicenseRef = await addDoc(collection(db, 'licenses'), {
+                  nomelicenciador: licenseName,
+                  nomejurlicenciador: String(getVal(["Licenciador (Nome jurídico)", "Nome Jurídico"]) || licenseName).trim(),
+                  nomeagente: String(getVal(["Administradora/Agente", "Agente"]) || "").trim(),
+                  createdAt: serverTimestamp()
+                });
+                licenseId = newLicenseRef.id;
               console.log(`Novo licenciador criado com ID: ${licenseId}`);
             }
 
             const lineNames = String(getVal(["Linhas Spiral", "Linhas"]) || "").split(',').map(s => s.trim()).filter(Boolean);
             const lineIds = lines
-              .filter(l => l.licenseId === licenseId && lineNames.some(name => l.name.toLowerCase() === name.toLowerCase()))
+              .filter(l => l.licenseId === licenseId && lineNames.some(name => l.nomelinha.toLowerCase() === name.toLowerCase()))
               .map(l => l.id);
 
             const productNames = String(getVal(["Tipos de produtos em contrato", "Produtos"]) || "").split(',').map(s => s.trim()).filter(Boolean);
@@ -2786,7 +2808,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar informações
@@ -2958,8 +2980,8 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
 
           try {
             const license = licenses.find(l => 
-              String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
-              String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
+              String(l.nomelicenciador || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+              String(l.nomejurlicenciador || "").trim().toLowerCase() === licenseName.toLowerCase()
             );
             const contract = contracts.find(c => 
               String(c.contractNumber || "").trim().toLowerCase() === contractNum.toLowerCase() &&
@@ -3031,7 +3053,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "outline" }), "border-slate-200 text-slate-600 hover:bg-slate-50 gap-2")}>
             <Upload size={18} /> Importar Pagamentos
@@ -3166,12 +3188,12 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
           const royaltyValue = Number(getVal(["Royalties", "Valor Royalties"])) || 0;
 
           const license = licenses.find(l => 
-            String(l.fantasyName || "").trim().toLowerCase() === licenseName.toLowerCase() ||
-            String(l.legalName || "").trim().toLowerCase() === licenseName.toLowerCase()
+            String(l.nomelicenciador || "").trim().toLowerCase() === licenseName.toLowerCase() ||
+            String(l.nomejurlicenciador || "").trim().toLowerCase() === licenseName.toLowerCase()
           );
 
           const line = lines.find(l => 
-            String(l.name || "").trim().toLowerCase() === lineName.toLowerCase() &&
+            String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
             (license ? l.licenseId === license.id : true)
           );
 
@@ -3243,7 +3265,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button className={cn(buttonVariants({ variant: "outline" }), "gap-2 border-slate-200 text-slate-600 hover:bg-slate-50")}>
           <FileSpreadsheet size={18} /> Importar Royalties
         </button>
@@ -3526,7 +3548,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   return (
     <Dialog open={open} onOpenChange={(val) => { setOpen(val); if(!val) setStep(1); }}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Contrato
@@ -3553,10 +3575,14 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
               <div className="space-y-2 col-span-2">
                 <Label>Licenciador</Label>
                   <Select onValueChange={(v) => { setLicenseId(v); setParentId(''); }} value={licenseId}>
-                    <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o licenciador">
+                        {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
-                      {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                      {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                        <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -3994,7 +4020,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                         );
                       }}
                     >
-                      {l.name}
+                      {l.nomelinha || `ID: ${l.id.slice(0,5)}`}
                     </Badge>
                   ))}
                   {licenseId && lines.filter(l => l.licenseId === licenseId).length === 0 && (
@@ -4137,7 +4163,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Relatório
@@ -4168,8 +4194,8 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
                 {lines.filter(l => {
                   const contract = contracts.find(c => c.id === contractId);
                   return (contract?.lineIds || []).includes(l.id);
-                }).sort((a, b) => a.name.localeCompare(b.name)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                }).sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -4182,7 +4208,7 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
                 {products.filter(p => {
                   const contract = contracts.find(c => c.id === contractId);
                   return (contract?.productIds || []).includes(p.id) && (lineId ? p.lineId === lineId : true);
-                }).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(p => (
+                }).sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).map(p => (
                   <SelectItem key={p.id} value={p.id}>{p.name || `ID: ${p.id.slice(0,5)}`}</SelectItem>
                 ))}
                 {(!selectedContract || (selectedContract.productIds || []).length === 0) && (
@@ -4292,7 +4318,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "default" }), "bg-blue-600 hover:bg-blue-700 gap-2")}>
             <Plus size={18} /> Novo Pagamento
@@ -4335,10 +4361,14 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
             <div className="space-y-2">
               <Label>Licenciador</Label>
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o licenciador">
+                    {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -4462,7 +4492,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       
       return {
         id: contract.id,
-        licenseName: license?.fantasyName || 'Licenciador',
+        licenseName: license?.nomelicenciador || 'Licenciador',
         contractNumber: contract.contractNumber || contract.id.slice(0, 5),
         contractRoyalties,
         minimumGuarantee: contract.minimumGuarantee,
@@ -4587,13 +4617,16 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 {(() => {
                   const installments = contracts
                     .filter((c: any) => ['Ativo', 'Ativo (sell-off)'].includes(getContractStatus(c).label))
-                    .flatMap((c: any) => (c.mgInstallments || []).map((inst: any) => ({
-                      ...inst,
-                      contractId: c.id,
-                      contractNumber: c.contractNumber || c.id.slice(0, 5),
-                      licenseName: licenses.find((l: any) => l.id === c.licenseId)?.fantasyName || 'Licenciador',
-                      currency: c.currency || 'BRL'
-                    })));
+                    .flatMap((c: any) => (c.mgInstallments || []).map((inst: any) => {
+                      const lic = licenses.find((l: any) => l.id === c.licenseId);
+                      return {
+                        ...inst,
+                        contractId: c.id,
+                        contractNumber: c.contractNumber || c.id.slice(0, 5),
+                        licenseName: lic?.nomelicenciador || (c.licenseId ? `ID: ${c.licenseId.slice(0, 5)}` : 'Licenciador'),
+                        currency: c.currency || 'BRL'
+                      };
+                    }));
 
                   const groupedByMonth = installments.reduce((acc: any, inst: any) => {
                     const dateObj = inst.dueDate ? new Date(inst.dueDate) : null;
@@ -4813,7 +4846,7 @@ function ContractCard({
         <div className="border-t border-slate-100 pt-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-[13px] text-slate-500 font-normal">Compensação</h3>
-            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-4 py-1.5 rounded-lg text-sm font-bold font-mono">
+            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-4 py-1.5 rounded-lg text-sm font-semibold uppercase tracking-wider">
                {contract.currency === 'Dólar' ? 'USD' : 
                 contract.currency === 'Real' ? 'BRL' : 
                 contract.currency === 'Euro' ? 'EUR' : 
@@ -4842,6 +4875,12 @@ function ContractCard({
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-3">
+            <div className="flex justify-between items-center mb-1">
+              <h3 className="text-[13px] text-slate-500 font-normal">Royalties</h3>
+              <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-2 py-0.5 rounded-md text-[11px] font-medium tracking-normal">
+                {(contract.reportingFrequency || 'Trimestral').charAt(0).toUpperCase() + (contract.reportingFrequency || 'Trimestral').slice(1).toLowerCase()}
+              </Badge>
+            </div>
             <div className="flex justify-between items-end border-b border-slate-100 pb-3">
               <div className="space-y-0.5 text-slate-400 text-[11px] leading-relaxed">
                 <div>Vendas líquidas</div>
@@ -4852,9 +4891,6 @@ function ContractCard({
                  <div>{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(1))}% {contract.royaltyRateNetSales2 ? `e ${Number((contract.royaltyRateNetSales2 * 100).toFixed(1))}%` : ''}</div>
                  <div>{Number(((contract.royaltyRateNetPurchases || 0) * 100).toFixed(1))}%</div>
                  <div>{Number(((contract.royaltyRateFOB || 0) * 100).toFixed(1))}%</div>
-              </div>
-              <div className="text-slate-400 text-[11px] text-right">
-                {contract.reportingFrequency || 'Trimestral'}
               </div>
             </div>
           </div>
@@ -4920,7 +4956,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
       ...contract, 
       calculatedStatus: statusInfo.label, 
       statusColor: statusInfo.color,
-      licenseName: license?.fantasyName || '',
+      licenseName: license?.nomelicenciador || (contract.licenseId ? `ID: ${contract.licenseId.slice(0, 5)}` : ''),
       totalRoyalties,
       balance
     };
@@ -5294,7 +5330,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
         {isAdmin && reports.length > 0 && (
           <div className="flex items-center gap-2">
             <Dialog>
-              <DialogTrigger nativeButton={false} render={
+              <DialogTrigger nativeButton={true} render={
                 <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
                   <Trash2 size={14} /> Limpar Tudo
                 </button>
@@ -5326,7 +5362,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
             <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
             <Dialog>
-              <DialogTrigger nativeButton={false} render={
+              <DialogTrigger nativeButton={true} render={
                 <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
                   <Trash2 size={14} /> Excluir Selecionados
                 </button>
@@ -5397,8 +5433,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                         onChange={() => handleSelectRow(report.id)}
                       />
                     </td>
-                    <td className="px-2 py-4 font-medium text-slate-900">{license?.fantasyName || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{line?.name || 'Geral'}</td>
+                    <td className="px-2 py-4 font-medium text-slate-900">{license?.nomelicenciador || (contract?.licenseId ? `ID: ${contract.licenseId.slice(0,5)}` : '-')}</td>
+                    <td className="px-2 py-4 text-slate-600">{line?.nomelinha || (report.lineId ? `ID: ${report.lineId.slice(0,5)}` : 'Geral')}</td>
                     <td className="px-2 py-4 text-slate-600">{report.year}</td>
                     <td className="px-2 py-4 text-slate-600">{report.month}</td>
                     <td className="px-2 py-4 text-slate-600">{report.quantity}</td>
@@ -5510,7 +5546,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
             <Settings size={16} />
@@ -5553,10 +5589,14 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
             <div className="space-y-2">
               <Label>Licenciador</Label>
               <Select onValueChange={(v) => { setLicenseId(v); setContractId(''); }} value={licenseId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o licenciador">
+                    {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -5569,7 +5609,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
               <Select onValueChange={setContractId} value={contractId}>
                 <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
                 <SelectContent>
-                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
+                  {[...filteredContracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
@@ -5735,13 +5775,13 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
       const licenseA = licenses.find((l: any) => l.id === (a.licenseId || contractA?.licenseId));
       const contractB = contracts.find((c: any) => c.id === b.contractId);
       const licenseB = licenses.find((l: any) => l.id === (b.licenseId || contractB?.licenseId));
-      aValue = licenseA?.fantasyName || '';
-      bValue = licenseB?.fantasyName || '';
+      aValue = licenseA?.nomelicenciador || (a.licenseId || contractA?.licenseId || '');
+      bValue = licenseB?.nomelicenciador || (b.licenseId || contractB?.licenseId || '');
     } else if (sortConfig.key === 'contract') {
       const contractA = contracts.find((c: any) => c.id === a.contractId);
       const contractB = contracts.find((c: any) => c.id === b.contractId);
-      aValue = contractA?.contractNumber || '';
-      bValue = contractB?.contractNumber || '';
+      aValue = contractA?.contractNumber || (a.contractId || '');
+      bValue = contractB?.contractNumber || (b.contractId || '');
     } else {
       aValue = a[sortConfig.key] || '';
       bValue = b[sortConfig.key] || '';
@@ -5831,10 +5871,10 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
                          payment.type === 'marketing' ? 'Marketing' : 'Outros'}
                       </Badge>
                     </td>
-                    <td className="px-2 py-4 font-medium text-slate-900 truncate max-w-[120px]" title={license?.fantasyName}>
-                      {license?.fantasyName || '-'}
-                    </td>
-                    <td className="px-2 py-4 text-slate-600">{contract?.contractNumber || '-'}</td>
+                  <td className="px-2 py-4 font-medium text-slate-900 truncate max-w-[120px]" title={license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : '')}>
+                    {license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-'))}
+                  </td>
+                    <td className="px-2 py-4 text-slate-600">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-'))}</td>
                     <td className="px-2 py-4 text-slate-600 truncate max-w-[100px]" title={payment.identification}>
                       {payment.identification || '-'}
                     </td>
@@ -5893,20 +5933,20 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
 
 function EditLicensorDialog({ license }: { license: License }) {
   const [open, setOpen] = useState(false);
-  const [fantasyName, setFantasyName] = useState(license.fantasyName);
-  const [legalName, setLegalName] = useState(license.legalName);
-  const [agent, setAgent] = useState(license.agent || '');
-  const [description, setDescription] = useState(license.description || '');
+  const [nomelicenciador, setNomelicenciador] = useState(license.nomelicenciador || '');
+  const [nomejurlicenciador, setNomejurlicenciador] = useState(license.nomejurlicenciador || '');
+  const [nomeagente, setNomeagente] = useState(license.nomeagente || '');
+  const [descricaolicenciador, setDescricaolicenciador] = useState(license.descricaolicenciador || '');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const licenseRef = doc(db, 'licenses', license.id);
       await updateDoc(licenseRef, { 
-        fantasyName, 
-        legalName, 
-        agent, 
-        description, 
+        nomelicenciador,
+        nomejurlicenciador, 
+        nomeagente, 
+        descricaolicenciador, 
         updatedAt: serverTimestamp() 
       });
       toast.success('Licenciador atualizado com sucesso!');
@@ -5919,10 +5959,10 @@ function EditLicensorDialog({ license }: { license: License }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        nativeButton={false}
+        nativeButton={true}
         render={
           <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
-            <Settings size={16} />
+            <Pencil size={16} />
           </button>
         }
       />
@@ -5933,25 +5973,63 @@ function EditLicensorDialog({ license }: { license: License }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label htmlFor="edit-fantasyName">Nome Fantasia</Label>
-            <Input id="edit-fantasyName" value={fantasyName} onChange={(e) => setFantasyName(e.target.value)} required />
+            <Label htmlFor="edit-nomelicenciador">Nome</Label>
+            <Input id="edit-nomelicenciador" value={nomelicenciador} onChange={(e) => setNomelicenciador(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-legalName">Nome Jurídico</Label>
-            <Input id="edit-legalName" value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
+            <Label htmlFor="edit-nomejurlicenciador">Nome Jurídico</Label>
+            <Input id="edit-nomejurlicenciador" value={nomejurlicenciador} onChange={(e) => setNomejurlicenciador(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-agent">Administradora/Agente</Label>
-            <Input id="edit-agent" value={agent} onChange={(e) => setAgent(e.target.value)} />
+            <Label htmlFor="edit-nomeagente">Administradora/Agente</Label>
+            <Input id="edit-nomeagente" value={nomeagente} onChange={(e) => setNomeagente(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-desc">Descrição (Opcional)</Label>
-            <Input id="edit-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Label htmlFor="edit-descricaolicenciador">Descrição (Opcional)</Label>
+            <Input id="edit-descricaolicenciador" value={descricaolicenciador} onChange={(e) => setDescricaolicenciador(e.target.value)} />
           </div>
           <DialogFooter>
             <Button type="submit">Salvar Alterações</Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteLicensorDialog({ licenseId, licensorName }: { licenseId: string, licensorName: string }) {
+  const [open, setOpen] = useState(false);
+
+  const handleDelete = async () => {
+    try {
+      await deleteDoc(doc(db, 'licenses', licenseId));
+      toast.success(`Licenciador ${licensorName} excluído com sucesso!`);
+      setOpen(false);
+    } catch (err) {
+      toast.error('Erro ao excluir licenciador.');
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger nativeButton={true} render={
+        <button 
+          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-red-600")}
+        >
+          <Trash2 size={16} />
+        </button>
+      } />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Excluir Licenciador</DialogTitle>
+          <DialogDescription>
+            Tem certeza que deseja excluir o licenciador <strong>{licensorName}</strong>? Esta ação não pode ser desfeita.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button variant="destructive" onClick={handleDelete}>Confirmar Exclusão</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -5971,25 +6049,27 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3">Nome Fantasia</th>
-                <th className="px-4 py-3">Nome Jurídico</th>
+                <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Agentes</th>
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {[...licenses].sort((a, b) => a.fantasyName.localeCompare(b.fantasyName)).map((license) => (
-                <tr key={license.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4 font-medium text-slate-900">{license.fantasyName}</td>
-                  <td className="px-4 py-4 text-slate-600">{license.legalName}</td>
-                  <td className="px-4 py-4 text-blue-600 font-medium">{license.agent || '-'}</td>
-                  {isAdmin && (
-                    <td className="px-4 py-4 text-right">
-                      <EditLicensorDialog license={license} />
-                    </td>
-                  )}
-                </tr>
-              ))}
+                {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map((license) => (
+                  <tr key={license.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-4 font-medium text-slate-900">{license.nomelicenciador || `ID: ${license.id.slice(0,5)}`}</td>
+                    <td className="px-4 py-4 text-blue-600 font-medium">{license.nomeagente || '-'}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-4 text-right flex justify-end gap-1">
+                        <EditLicensorDialog license={license} />
+                        <DeleteLicensorDialog 
+                          licenseId={license.id} 
+                          licensorName={license.nomelicenciador || license.id} 
+                        />
+                      </td>
+                    )}
+                  </tr>
+                ))}
               {licenses.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
@@ -6014,7 +6094,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
   trigger?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(line.name);
+  const [nomelinha, setNomelinha] = useState(line.nomelinha);
   const [licenseId, setLicenseId] = useState(line.licenseId);
   const [status, setStatus] = useState(line.status || '');
   const [brandType, setBrandType] = useState(line.brandType || 'própria');
@@ -6038,7 +6118,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
     try {
       const lineRef = doc(db, 'lines', line.id);
       await updateDoc(lineRef, { 
-        name,
+        nomelinha,
         licenseId,
         status,
         brandType,
@@ -6072,7 +6152,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={trigger || (
+      <DialogTrigger nativeButton={true} render={trigger || (
         <button className="text-slate-400 hover:text-blue-600 p-2 rounded-md">
           <Settings size={16} />
         </button>
@@ -6086,17 +6166,21 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
             <div className="space-y-2 col-span-2">
               <Label>Licenciador</Label>
               <Select onValueChange={setLicenseId} value={licenseId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o licenciador">
+                    {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Nome</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} required />
+              <Label htmlFor="edit-nomelinha">Nome da linha</Label>
+              <Input id="edit-nomelinha" value={nomelinha} onChange={(e) => setNomelinha(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
@@ -6119,15 +6203,15 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
               {categories.map(cat => (
                 <Badge
                   key={cat.id}
-                  variant={productCategories.includes(cat.name) ? "default" : "outline"}
+                  variant={productCategories.includes(cat.nomeCategoriaProduto) ? "default" : "outline"}
                   className="cursor-pointer"
                   onClick={() => {
                     setProductCategories(prev =>
-                      prev.includes(cat.name) ? prev.filter(name => name !== cat.name) : [...prev, cat.name]
+                      prev.includes(cat.nomeCategoriaProduto) ? prev.filter(name => name !== cat.nomeCategoriaProduto) : [...prev, cat.nomeCategoriaProduto]
                     );
                   }}
                 >
-                  {cat.name}
+                  {cat.nomeCategoriaProduto}
                 </Badge>
               ))}
             </div>
@@ -6154,7 +6238,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
           <div className="space-y-2">
             <Label>Produtos da Linha</Label>
             <div className="p-3 border rounded-lg bg-slate-50 text-sm">
-              {lineProducts.length > 0 ? lineProducts.map(p => p.name).join(', ') : 'Nenhum produto cadastrado.'}
+              {lineProducts.length > 0 ? lineProducts.map(p => p.name || `ID: ${p.id.slice(0, 5)}`).join(', ') : 'Nenhum produto cadastrado.'}
             </div>
           </div>
           <DialogFooter>
@@ -6181,7 +6265,7 @@ function DeleteReportDialog({ reportId }: { reportId: string }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button 
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-slate-400 hover:text-red-600 h-6 w-6 p-0")}
         >
@@ -6219,7 +6303,7 @@ function DeleteLineDialog({ lineId, lineName }: { lineId: string, lineName: stri
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button 
           className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-slate-400 hover:text-red-600")}
         >
@@ -6268,7 +6352,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
     license,
     lines: lines.filter(l => l.licenseId === license.id)
   })).filter(group => group.lines.length > 0)
-     .sort((a, b) => a.license.fantasyName.localeCompare(b.license.fantasyName));
+     .sort((a, b) => (a.license.nomelicenciador || a.license.id).localeCompare(b.license.nomelicenciador || b.license.id));
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -6310,7 +6394,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
                       <TableCell colSpan={4} className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           {isCollapsed ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronUp className="size-4 text-slate-400" />}
-                          <span className="font-bold text-slate-900">{license.fantasyName}</span>
+                          <span className="font-bold text-slate-900">{license.nomelicenciador || `ID: ${license.id.slice(0,5)}`}</span>
                           <Badge variant="secondary" className="ml-2 text-[10px] h-5">
                             {groupLines.length} {groupLines.length === 1 ? 'Linha' : 'Linhas'}
                           </Badge>
@@ -6319,7 +6403,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
                     </TableRow>
                     
                     {/* Line Rows */}
-                    {!isCollapsed && groupLines.sort((a, b) => a.name.localeCompare(b.name)).map((line) => (
+                    {!isCollapsed && groupLines.sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map((line) => (
                       <TableRow key={line.id} className="hover:bg-slate-50/30">
                         <TableCell className="pl-10">
                           <EditLineDialog 
@@ -6330,7 +6414,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
                             categories={categories}
                             trigger={
                               <button className="font-medium text-blue-600 hover:underline text-left">
-                                {line.name}
+                                {line.nomelinha || `ID: ${line.id.slice(0,5)}`}
                               </button>
                             }
                           />
@@ -6358,7 +6442,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
                                 products={products} 
                                 categories={categories} 
                               />
-                              <DeleteLineDialog lineId={line.id} lineName={line.name} />
+                              <DeleteLineDialog lineId={line.id} lineName={line.nomelinha} />
                             </div>
                           </TableCell>
                         )}
@@ -6381,18 +6465,54 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
   );
 }
 
-function ProductCategoriesView({ categories }: { categories: ProductCategory[] }) {
+function ProductCategoriesView({ categories, isAdmin }: { categories: ProductCategory[], isAdmin: boolean }) {
   const [newCategory, setNewCategory] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  const sortedCategories = [...categories].sort((a, b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || ''));
 
   const handleAdd = async () => {
     if (!newCategory) return;
-    await addDoc(collection(db, 'productCategories'), { name: newCategory });
-    setNewCategory('');
+    try {
+      await addDoc(collection(db, 'productCategories'), { 
+        nomeCategoriaProduto: newCategory,
+        createdAt: serverTimestamp()
+      });
+      setNewCategory('');
+      toast.success('Categoria adicionada!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'productCategories');
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await deleteDoc(doc(db, 'productCategories', id));
+    if (window.confirm('Tem certeza que deseja excluir esta categoria?')) {
+      try {
+        await deleteDoc(doc(db, 'productCategories', id));
+        toast.success('Categoria excluída!');
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, 'productCategories');
+      }
+    }
   };
+
+  const handleUpdate = async (id: string) => {
+    if (!editingValue.trim()) return;
+    try {
+      await updateDoc(doc(db, 'productCategories', id), { 
+        nomeCategoriaProduto: editingValue.trim()
+      });
+      setEditingId(null);
+      setEditingValue('');
+      toast.success('Categoria atualizada!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, 'productCategories');
+    }
+  };
+
+  if (!isAdmin && categories.length === 0) return null;
 
   return (
     <Card className="border-slate-200 shadow-sm mt-8">
@@ -6400,30 +6520,74 @@ function ProductCategoriesView({ categories }: { categories: ProductCategory[] }
         <CardTitle>Categorias de Produtos</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex gap-2 mb-4">
-          <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Nova categoria" />
-          <Button onClick={handleAdd}>Adicionar</Button>
+        {isAdmin && (
+          <div className="flex gap-2 mb-4 items-center">
+            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Nova categoria" />
+            <Button onClick={handleAdd}>Adicionar</Button>
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-sm text-slate-500 whitespace-nowrap">Visualização:</span>
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Linhas por página" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="20">20 itens</SelectItem>
+                  <SelectItem value="40">40 itens</SelectItem>
+                  <SelectItem value="80">80 itens</SelectItem>
+                  <SelectItem value={categories.length.toString()}>Todos os itens</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {sortedCategories.slice(0, pageSize).map(cat => (
+            <div key={cat.id} className="border p-3 rounded flex justify-between items-center bg-white shadow-sm hover:border-slate-300 transition-colors">
+              {editingId === cat.id ? (
+                <div className="flex gap-1 w-full">
+                  <Input 
+                    value={editingValue} 
+                    onChange={e => setEditingValue(e.target.value)} 
+                    className="h-8 text-sm"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleUpdate(cat.id);
+                      if (e.key === 'Escape') setEditingId(null);
+                    }}
+                  />
+                  <Button size="sm" onClick={() => handleUpdate(cat.id)} className="h-8 px-2">Ok</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="h-8 px-2">
+                    <X size={14} />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <span className="text-sm truncate mr-2">{cat.nomeCategoriaProduto}</span>
+                  {isAdmin && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => {
+                          setEditingId(cat.id);
+                          setEditingValue(cat.nomeCategoriaProduto);
+                        }} 
+                        className="text-slate-400 hover:text-blue-600 h-8 w-8"
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)} className="text-slate-400 hover:text-red-600 h-8 w-8">
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
         </div>
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="p-3 text-left font-medium text-slate-500">Nome da Categoria</th>
-                <th className="p-3 text-right font-medium text-slate-500">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
-                <tr key={cat.id}>
-                  <td className="p-3">{cat.name}</td>
-                  <td className="p-3 text-right">
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)}><Trash2 size={16} /></Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {sortedCategories.length === 0 && <p className="text-sm text-slate-500 text-center py-4">Nenhuma categoria encontrada.</p>}
       </CardContent>
     </Card>
   );
@@ -6437,6 +6601,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'sku', direction: 'asc' });
+  const [pageSize, setPageSize] = useState<number>(50);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -6463,16 +6628,16 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     let valB: any = b[sortConfig.key as keyof Product];
 
     if (sortConfig.key === 'category') {
-      valA = categories.find(c => c.id === a.categoryId)?.name || '';
-      valB = categories.find(c => c.id === b.categoryId)?.name || '';
+      valA = categories.find(c => c.id === a.categoryId)?.nomeCategoriaProduto || '';
+      valB = categories.find(c => c.id === b.categoryId)?.nomeCategoriaProduto || '';
     } else if (sortConfig.key === 'line') {
-      valA = lines.find(l => l.id === a.lineId)?.name || '';
-      valB = lines.find(l => l.id === b.lineId)?.name || '';
+      valA = lines.find(l => l.id === a.lineId)?.nomelinha || '';
+      valB = lines.find(l => l.id === b.lineId)?.nomelinha || '';
     } else if (sortConfig.key === 'license') {
       const lineA = lines.find(l => l.id === a.lineId);
       const lineB = lines.find(l => l.id === b.lineId);
-      valA = licenses.find(l => l.id === (a.licenseId || lineA?.licenseId))?.fantasyName || '';
-      valB = licenses.find(l => l.id === (b.licenseId || lineB?.licenseId))?.fantasyName || '';
+      valA = licenses.find(l => l.id === (a.licenseId || lineA?.licenseId))?.nomelicenciador || '';
+      valB = licenses.find(l => l.id === (b.licenseId || lineB?.licenseId))?.nomelicenciador || '';
     }
 
     if (valA === undefined || valA === null) valA = '';
@@ -6538,17 +6703,19 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4 mb-6">
+          <div className="flex flex-wrap items-end gap-4 mb-6">
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Categoria</Label>
               <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Todas" />
+                <SelectTrigger className="min-w-[150px] w-auto">
+                  <SelectValue placeholder="Todas">
+                    {filterCategory === 'all' ? 'Todas as Categorias' : (categories.find(c => c.id === filterCategory)?.nomeCategoriaProduto)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Categorias</SelectItem>
-                  {[...categories].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                  {[...categories].sort((a, b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || '')).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6556,13 +6723,15 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Linha</Label>
               <Select value={filterLine} onValueChange={setFilterLine}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Todas" />
+                <SelectTrigger className="min-w-[150px] w-auto">
+                  <SelectValue placeholder="Todas">
+                    {filterLine === 'all' ? 'Todas as Linhas' : (lines.find(l => l.id === filterLine)?.nomelinha)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as Linhas</SelectItem>
-                  {[...lines].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.name || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...lines].sort((a, b) => (a.nomelinha || '').localeCompare(b.nomelinha || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6570,13 +6739,15 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Licenciador</Label>
               <Select value={filterLicense} onValueChange={setFilterLicense}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Todos" />
+                <SelectTrigger className="min-w-[150px] w-auto">
+                  <SelectValue placeholder="Todos">
+                    {filterLicense === 'all' ? 'Todos os Licenciadores' : (licenses.find(l => l.id === filterLicense)?.nomelicenciador)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os Licenciadores</SelectItem>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName || '').localeCompare(b.fantasyName || b.legalName || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.nomelicenciador || '').localeCompare(b.nomelicenciador || '')).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -6584,7 +6755,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Ano</Label>
               <Select value={filterYear} onValueChange={setFilterYear}>
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="min-w-[100px] w-auto">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -6595,32 +6766,29 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex-grow" />
+            <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-500 whitespace-nowrap">Visualização:</span>
+                <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); }}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Linhas por página" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 itens</SelectItem>
+                    <SelectItem value="50">50 itens</SelectItem>
+                    <SelectItem value="100">100 itens</SelectItem>
+                    <SelectItem value={filteredProducts.length.toString()}>Todos os itens</SelectItem>
+                  </SelectContent>
+                </Select>
+            </div>
           </div>
 
-          {isAdmin && selectedProductIds.length > 0 && (
-            <div className="flex items-center gap-2 mb-4 p-2 bg-blue-50 border border-blue-100 rounded-md">
-              <span className="text-sm text-blue-700 font-medium px-2">
-                {selectedProductIds.length} selecionado(s)
-              </span>
-              <BatchEditProductsDialog 
-                selectedProductIds={selectedProductIds} 
-                lines={lines} 
-                categories={categories} 
-                licenses={licenses} 
-                onComplete={() => setSelectedProductIds([])} 
-              />
-              <Button variant="destructive" size="sm" onClick={handleBatchDelete} className="gap-2">
-                <Trash2 size={16} /> Excluir Selecionados
-              </Button>
-            </div>
-          )}
-
-          <div className="rounded-md border border-slate-200 overflow-x-auto">
+          <div className="rounded-md border border-slate-200 overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left min-w-[1200px]">
-              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0">
                 <tr>
                   {isAdmin && (
-                    <th className="px-4 py-3 w-12 text-center">
+                    <th className="px-4 py-3 w-12 text-center bg-slate-50">
                       <input 
                         type="checkbox" 
                         checked={filteredProducts.length > 0 && selectedProductIds.length === filteredProducts.length}
@@ -6629,33 +6797,33 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3 w-16">Imagem</th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('sku')}>
+                  <th className="px-4 py-3 w-16 bg-slate-50">Imagem</th>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('sku')}>
                     <div className="flex items-center gap-1">Código {sortConfig.key === 'sku' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('name')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('name')}>
                     <div className="flex items-center gap-1">Nome {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('category')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('category')}>
                     <div className="flex items-center gap-1">Categoria {sortConfig.key === 'category' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('line')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('line')}>
                     <div className="flex items-center gap-1">Linha {sortConfig.key === 'line' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('license')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('license')}>
                     <div className="flex items-center gap-1">Licenciador {sortConfig.key === 'license' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('launchYear')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('launchYear')}>
                     <div className="flex items-center gap-1">Ano {sortConfig.key === 'launchYear' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('ean')}>
+                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('ean')}>
                     <div className="flex items-center gap-1">EAN {sortConfig.key === 'ean' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
-                  {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
+                  {isAdmin && <th className="px-4 py-3 text-right bg-slate-50">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {sortedProducts.map((product) => {
+                {sortedProducts.slice(0, pageSize).map((product) => {
                   const line = lines.find(l => l.id === product.lineId);
                   const category = categories.find(c => c.id === product.categoryId);
                   const license = licenses.find(l => l.id === (product.licenseId || line?.licenseId));
@@ -6691,9 +6859,9 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                       </td>
                       <td className="px-4 py-4 font-medium text-slate-900">{product.sku ? String(product.sku).padStart(6, '0') : '-'}</td>
                       <td className="px-4 py-4 text-slate-900">{product.name}</td>
-                      <td className="px-4 py-4 text-slate-600">{category?.name || '-'}</td>
-                      <td className="px-4 py-4 text-slate-600">{line?.name || '-'}</td>
-                      <td className="px-4 py-4 text-slate-600">{license?.fantasyName || '-'}</td>
+                      <td className="px-4 py-4 text-slate-600">{category?.nomeCategoriaProduto || (product.categoryId ? `ID: ${product.categoryId.slice(0,5)}` : '-')}</td>
+                      <td className="px-4 py-4 text-slate-600">{line?.nomelinha || (product.lineId ? `ID: ${product.lineId.slice(0,5)}` : '-')}</td>
+                      <td className="px-4 py-4 text-slate-600">{license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (product.licenseId ? `ID: ${product.licenseId.slice(0,5)}` : '-'))}</td>
                       <td className="px-4 py-4 text-slate-600">{product.launchYear || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
                       {isAdmin && (
@@ -6724,7 +6892,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
           </div>
         </CardContent>
       </Card>
-      <ProductCategoriesView categories={categories} />
+      <ProductCategoriesView categories={categories} isAdmin={isAdmin} />
     </div>
   );
 }

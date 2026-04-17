@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocFromServer, serverTimestamp } from 'firebase/firestore';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -12,20 +12,27 @@ export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export const uploadFile = async (file: File, path: string): Promise<string> => {
-  const storageRef = ref(storage, path);
-  const uploadTask = uploadBytesResumable(storageRef, file);
-
-  return new Promise((resolve, reject) => {
-    uploadTask.on(
-      'state_changed',
-      null,
-      (error) => reject(error),
-      async () => {
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-        resolve(downloadURL);
+  console.log(`Iniciando upload para: ${path}, Tamanho: ${file.size} bytes, Tipo: ${file.type}`);
+  try {
+    const storageRef = ref(storage, path);
+    // Usando uploadBytes em vez de uploadBytesResumable para maior simplicidade e confiabilidade em uploads simples
+    const snapshot = await uploadBytes(storageRef, file);
+    console.log('Upload concluído, obtendo URL de download...', snapshot);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    console.log('URL obtida com sucesso:', downloadURL);
+    return downloadURL;
+  } catch (error) {
+    console.error('Erro detalhado no upload:', error);
+    if (error && typeof error === 'object' && 'code' in error) {
+      if (error.code === 'storage/retry-limit-exceeded') {
+        throw new Error('O limite de tempo para o upload foi excedido. Verifique sua conexão e se as regras do Firebase Storage permitem a escrita (allow write).');
       }
-    );
-  });
+      if (error.code === 'storage/unauthorized') {
+        throw new Error('Permissão negada para upload. Verifique as regras de segurança do Firebase Storage.');
+      }
+    }
+    throw error;
+  }
 };
 
 export const signIn = () => signInWithPopup(auth, googleProvider);

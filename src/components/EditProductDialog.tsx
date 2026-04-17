@@ -11,9 +11,9 @@ import { Edit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Types
-interface License { id: string; fantasyName: string; legalName: string; }
-interface Line { id: string; name: string; licenseId: string; }
-interface ProductCategory { id: string; name: string; }
+interface License { id: string; nomelicenciador: string; nomejurlicenciador: string; nomeagente?: string; descricaolicenciador?: string; }
+interface Line { id: string; nomelinha: string; licenseId: string; }
+interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface Product { 
   id: string; 
   lineId: string; 
@@ -69,7 +69,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={false} render={
+      <DialogTrigger nativeButton={true} render={
         <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
           <Edit2 size={16} />
         </button>
@@ -85,12 +85,16 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
               <Label>Licenciador</Label>
               <Select onValueChange={setLicenseId} value={licenseId || 'none'}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {licenseId === 'none' ? 'Nenhum' : (licenses.find(l => l.id === licenseId)?.nomelicenciador)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhum</SelectItem>
-                  {[...licenses].sort((a, b) => (a.fantasyName || a.legalName).localeCompare(b.fantasyName || b.legalName)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.fantasyName || l.legalName}</SelectItem>
+                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -99,11 +103,13 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
               <Label>Linha *</Label>
               <Select onValueChange={setLineId} value={lineId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {lines.find(l => l.id === lineId)?.nomelinha}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => a.name.localeCompare(b.name)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                  {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -126,12 +132,14 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
               <Label>Categoria</Label>
               <Select onValueChange={setCategoryId} value={categoryId || 'none'}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {categoryId === 'none' ? 'Nenhuma' : (categories.find(c => c.id === categoryId)?.nomeCategoriaProduto)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhuma</SelectItem>
-                  {[...categories].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  {[...categories].sort((a, b) => (a.nomeCategoriaProduto || a.id).localeCompare(b.nomeCategoriaProduto || b.id)).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
