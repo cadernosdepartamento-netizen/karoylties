@@ -5385,7 +5385,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       </CardHeader>
       <CardContent>
         <div className="rounded-md border border-slate-200 overflow-x-auto">
-          <table className="w-full text-[10px] text-left min-w-[1800px]">
+          <table className="w-full text-[10px] text-left min-w-[1500px]">
             <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider">
               <tr>
                 <th className="px-2 py-3 w-10">
@@ -5408,11 +5408,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 <th className="px-2 py-3">IPI</th>
                 <th className="px-2 py-3">Total Líquido</th>
                 <th className="px-2 py-3">Royalties</th>
-                <th className="px-2 py-3">Categoria</th>
-                <th className="px-2 py-3">Ano VA</th>
                 <th className="px-2 py-3">Preço de custo</th>
                 <th className="px-2 py-3">CMF</th>
-                <th className="px-2 py-3">Contrato</th>
                 {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
               </tr>
             </thead>
@@ -5445,11 +5442,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                     <td className="px-2 py-4 text-slate-600">{report.ipi?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                     <td className="px-2 py-4 font-semibold text-emerald-600">{report.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.category || line?.productCategories?.join(', ') || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.anoVA || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.costPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '-'}</td>
                     <td className="px-2 py-4 text-slate-600">{report.cmf || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600 text-[10px]">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0, 5)}` : '-')}</td>
                     {isAdmin && (
                       <td className="px-2 py-4 text-right">
                         <div className="flex justify-end items-center gap-1">
@@ -5464,7 +5458,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               })}
               {groupedReports.length === 0 && (
                 <tr>
-                  <td colSpan={19} className="px-4 py-8 text-center text-slate-400">Nenhum relatório encontrado.</td>
+                  <td colSpan={16} className="px-4 py-8 text-center text-slate-400">Nenhum relatório encontrado.</td>
                 </tr>
               )}
             </tbody>
@@ -6238,7 +6232,7 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
           <div className="space-y-2">
             <Label>Produtos da Linha</Label>
             <div className="p-3 border rounded-lg bg-slate-50 text-sm">
-              {lineProducts.length > 0 ? lineProducts.map(p => p.name || `ID: ${p.id.slice(0, 5)}`).join(', ') : 'Nenhum produto cadastrado.'}
+              {lineProducts.length > 0 ? lineProducts.map(p => p.sku || p.name || `ID: ${p.id.slice(0, 5)}`).join(', ') : 'Nenhum produto cadastrado.'}
             </div>
           </div>
           <DialogFooter>
