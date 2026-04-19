@@ -6,7 +6,7 @@
 import React, { useState, useEffect, Component, ReactNode } from 'react';
 import { auth, db, storage, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType, uploadFile } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   LayoutDashboard, 
@@ -23,6 +23,9 @@ import {
   Calendar,
   X,
   Building2,
+  Filter,
+  PackageSearch,
+  Database,
   Eye,
   Edit2,
   Layers,
@@ -37,7 +40,9 @@ import {
   CircleDollarSign,
   LayoutGrid,
   List,
-  Pencil
+  Pencil,
+  FileDown,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -72,6 +77,11 @@ import {
 import { SettingsView } from './components/SettingsView';
 import { EditProductDialog } from './components/EditProductDialog';
 import { BatchEditProductsDialog } from './components/BatchEditProductsDialog';
+import { DeleteProductDialog } from './components/DeleteProductDialog';
+import { BatchDeleteProductsDialog } from './components/BatchDeleteProductsDialog';
+import { MultiSelectDropdown } from './components/MultiSelectDropdown';
+import { ImportSalesDialog } from './components/ImportSalesDialog';
+import { SearchableSelect } from './components/SearchableSelect';
 
 // Types
 interface License { 
@@ -101,6 +111,7 @@ interface Product {
   licenseId?: string;
   launchYear?: number;
   ean?: string;
+  costPrice?: number;
 }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface ContractYear {
@@ -166,12 +177,19 @@ interface Contract {
 interface RoyaltyReport {
   id: string;
   contractId: string;
+  licenseId?: string;
   lineId: string;
   productId?: string;
   month: number;
   year: number;
   quantity: number;
+  totalValue?: number;
+  icms?: number;
+  pis?: number;
+  cofins?: number;
+  ipi?: number;
   netValue: number;
+  royaltyRate?: number;
   royaltyValue: number;
   productName?: string;
 }
@@ -183,6 +201,27 @@ interface Payment {
   amount: number;
   date: string;
   status: 'pending' | 'paid';
+}
+
+interface Sale {
+  id: string;
+  sku: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalValue: number;
+  icms?: number;
+  pis?: number;
+  cofins?: number;
+  ipi?: number;
+  netValue?: number;
+  ean?: string;
+  date: string;
+  licenseId: string;
+  lineId: string;
+  categoryId: string;
+  launchYear: number;
+  costPrice?: number;
 }
 
 interface UserProfile {
@@ -280,6 +319,7 @@ function MainApp() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [reports, setReports] = useState<RoyaltyReport[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -335,6 +375,10 @@ function MainApp() {
       setPayments(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment)));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'payments'));
 
+    const unsubSales = onSnapshot(collection(db, 'sales'), (snap) => {
+      setSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'sales'));
+
     return () => {
       unsubLicenses();
       unsubLines();
@@ -343,6 +387,7 @@ function MainApp() {
       unsubContracts();
       unsubReports();
       unsubPayments();
+      unsubSales();
     };
   }, [user]);
 
@@ -399,6 +444,12 @@ function MainApp() {
               label="Produtos" 
               active={activeTab === 'products'} 
               onClick={() => setActiveTab('products')} 
+            />
+            <SidebarItem 
+              icon={<TrendingUp size={20} />} 
+              label="Vendas" 
+              active={activeTab === 'sales'} 
+              onClick={() => setActiveTab('sales')} 
             />
             <SidebarItem 
               icon={<CircleDollarSign size={20} />} 
@@ -464,6 +515,7 @@ function MainApp() {
               {activeTab === 'licenses' && 'Licenciadores'}
               {activeTab === 'lines' && 'Linhas'}
               {activeTab === 'products' && 'Produtos'}
+              {activeTab === 'sales' && 'Vendas'}
               {activeTab === 'reports' && 'Royalties'}
               {activeTab === 'payments' && 'Pagamentos'}
             </h1>
@@ -485,7 +537,7 @@ function MainApp() {
               {activeTab === 'reports' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportReportsDialog contracts={contracts} lines={lines} products={products} licenses={licenses} />
-                  <AddReportDialog contracts={contracts} lines={lines} products={products} />
+                  <AddReportDialog contracts={contracts} lines={lines} products={products} licenses={licenses} sales={sales} />
                 </div>
               )}
               {activeTab === 'payments' && isAdmin && (
@@ -527,6 +579,7 @@ function MainApp() {
             {activeTab === 'licenses' && <LicensorsView licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'lines' && <LinesView lines={lines} licenses={licenses} contracts={contracts} products={products} categories={productCategories} isAdmin={isAdmin} />}
             {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'sales' && <SalesView sales={sales} licenses={licenses} lines={lines} categories={productCategories} products={products} isAdmin={isAdmin} />}
             {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'settings' && <SettingsView currentUser={user} isAdmin={isAdmin} />}
@@ -822,6 +875,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const templateColumns = [
     "Licenciador",
@@ -864,6 +918,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
     if (!file) return toast.error("Selecione um arquivo para importar.");
     
     setIsUploading(true);
+    setImportProgress(0);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -881,47 +936,57 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
 
         let importedCount = 0;
         let skippedCount = 0;
+        const total = jsonData.length;
 
-        for (const row of jsonData) {
-          const getVal = (keys: string[]) => {
-            const foundKey = Object.keys(row).find(k => 
-              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+        // Processamento em lotes para melhor performance e acompanhamento
+        const batchSize = 100;
+        for (let i = 0; i < jsonData.length; i += batchSize) {
+          const chunk = jsonData.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+          
+          for (const row of chunk) {
+            const getVal = (keys: string[]) => {
+              const foundKey = Object.keys(row).find(k => 
+                keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+              );
+              return foundKey ? row[foundKey] : undefined;
+            };
+
+            const licensorName = String(getVal(["Licenciador"]) || "").trim();
+            const lineName = String(getVal(["Nome da linha", "Linha"]) || "").trim();
+            const brandTypeRaw = String(getVal(["Tipo de marca", "Tipo"]) || "").trim();
+            const statusRaw = String(getVal(["Status"]) || "").trim();
+
+            if (!licensorName || !lineName) {
+              skippedCount++;
+              continue;
+            }
+
+            const license = licenses.find(l => 
+              String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+              String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
             );
-            return foundKey ? row[foundKey] : undefined;
-          };
+            if (!license) {
+              skippedCount++;
+              continue;
+            }
 
-          const licensorName = String(getVal(["Licenciador"]) || "").trim();
-          const lineName = String(getVal(["Nome da linha", "Linha"]) || "").trim();
-          const brandTypeRaw = String(getVal(["Tipo de marca", "Tipo"]) || "").trim();
-          const statusRaw = String(getVal(["Status"]) || "").trim();
+            const brandType = (brandTypeRaw?.toString().toLowerCase() === 'própria') ? 'própria' : 'licenciada';
+            const status = statusRaw?.toString() || 'Ativa';
 
-          if (!licensorName || !lineName) {
-            skippedCount++;
-            continue;
+            const newDocRef = doc(collection(db, 'lines'));
+            batch.set(newDocRef, {
+              nomelinha: lineName.toString(),
+              licenseId: license.id,
+              brandType,
+              status,
+              createdAt: serverTimestamp()
+            });
+            importedCount++;
           }
-
-          const license = licenses.find(l => 
-            String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-            String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-            String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
-          );
-          if (!license) {
-            console.warn(`Licenciador não encontrado: ${licensorName}`);
-            skippedCount++;
-            continue;
-          }
-
-          const brandType = (brandTypeRaw?.toString().toLowerCase() === 'própria') ? 'própria' : 'licenciada';
-          const status = statusRaw?.toString() || 'Ativa';
-
-          await addDoc(collection(db, 'lines'), {
-            nomelinha: lineName.toString(),
-            licenseId: license.id,
-            brandType,
-            status,
-            createdAt: serverTimestamp()
-          });
-          importedCount++;
+          
+          await batch.commit();
+          setImportProgress(Math.min(Math.round(((i + chunk.length) / total) * 100), 100));
         }
 
         toast.success(`${importedCount} linhas importadas com sucesso! ${skippedCount > 0 ? `(${skippedCount} puladas)` : ''}`);
@@ -932,6 +997,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
         toast.error("Erro ao processar o arquivo Excel.");
       } finally {
         setIsUploading(false);
+        setImportProgress(0);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -973,7 +1039,7 @@ function ImportLinesDialog({ licenses }: { licenses: License[] }) {
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={isUploading}>Cancelar</Button>
           <Button onClick={handleImport} disabled={!file || isUploading} className="bg-blue-600 hover:bg-blue-700">
-            {isUploading ? "Importando..." : "Iniciar Importação"}
+            {isUploading ? `Importando (${importProgress}%)...` : "Iniciar Importação"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1082,6 +1148,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const templateColumns = [
     "Licenciador",
@@ -1129,6 +1196,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
     if (!file) return toast.error("Selecione um arquivo para importar.");
     
     setIsUploading(true);
+    setImportProgress(0);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -1146,70 +1214,79 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
 
         let importedCount = 0;
         let skippedCount = 0;
+        const total = jsonData.length;
 
-        for (const row of jsonData) {
-          const getVal = (keys: string[]) => {
-            const foundKey = Object.keys(row).find(k => 
-              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+        const batchSize = 100;
+        for (let i = 0; i < jsonData.length; i += batchSize) {
+          const chunk = jsonData.slice(i, i + batchSize);
+          const batch = writeBatch(db);
+
+          for (const row of chunk) {
+            const getVal = (keys: string[]) => {
+              const foundKey = Object.keys(row).find(k => 
+                keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+              );
+              return foundKey ? row[foundKey] : undefined;
+            };
+
+            const licensorName = String(getVal(["Licenciador"]) || "").trim();
+            const lineName = String(getVal(["Linha"]) || "").trim();
+            const sku = String(getVal(["Código", "SKU"]) || "").trim();
+            const productName = String(getVal(["Nome", "Produto"]) || "").trim();
+            const categoryName = String(getVal(["Categoria"]) || "").trim();
+            const yearRaw = getVal(["Ano", "Ano de lançamento"]);
+            const ean = String(getVal(["EAN", "Código de barras"]) || "").trim();
+
+            if (!lineName || !productName) {
+              skippedCount++;
+              continue;
+            }
+
+            let licenseId = '';
+            if (licensorName) {
+              const license = licenses.find(l => 
+                String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+                String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
+              );
+              if (license) licenseId = license.id;
+            }
+
+            const line = lines.find(l => 
+              String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
+              (!licenseId || l.licenseId === licenseId)
             );
-            return foundKey ? row[foundKey] : undefined;
-          };
 
-          const licensorName = String(getVal(["Licenciador"]) || "").trim();
-          const lineName = String(getVal(["Linha"]) || "").trim();
-          const sku = String(getVal(["Código", "SKU"]) || "").trim();
-          const productName = String(getVal(["Nome", "Produto"]) || "").trim();
-          const categoryName = String(getVal(["Categoria"]) || "").trim();
-          const yearRaw = getVal(["Ano", "Ano de lançamento"]);
-          const ean = String(getVal(["EAN", "Código de barras"]) || "").trim();
+            if (!line) {
+              skippedCount++;
+              continue;
+            }
 
-          if (!lineName || !productName) {
-            skippedCount++;
-            continue;
+            let categoryId = '';
+            if (categoryName) {
+              const category = categories.find(c => String(c.nomeCategoriaProduto || "").trim().toLowerCase() === categoryName.toLowerCase());
+              if (category) categoryId = category.id;
+            }
+
+            const launchYear = yearRaw ? Number(yearRaw) : null;
+
+            const newDocRef = doc(collection(db, 'products'));
+            batch.set(newDocRef, {
+              name: productName.toString(),
+              lineId: line.id,
+              sku: sku.toString(),
+              categoryId,
+              licenseId: licenseId || line.licenseId,
+              launchYear: isNaN(launchYear as number) ? null : launchYear,
+              ean: ean.toString(),
+              createdAt: serverTimestamp()
+            });
+            importedCount++;
           }
-
-          let licenseId = '';
-          if (licensorName) {
-            const license = licenses.find(l => 
-              String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-              String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
-            );
-            if (license) licenseId = license.id;
-          }
-
-          const line = lines.find(l => 
-            String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
-            (!licenseId || l.licenseId === licenseId)
-          );
-
-          if (!line) {
-            console.warn(`Linha não encontrada: ${lineName}`);
-            skippedCount++;
-            continue;
-          }
-
-          let categoryId = '';
-          if (categoryName) {
-            const category = categories.find(c => String(c.nomeCategoriaProduto || "").trim().toLowerCase() === categoryName.toLowerCase());
-            if (category) categoryId = category.id;
-          }
-
-          const launchYear = yearRaw ? Number(yearRaw) : null;
-
-          await addDoc(collection(db, 'products'), {
-            name: productName.toString(),
-            lineId: line.id,
-            sku: sku.toString(),
-            categoryId,
-            licenseId: licenseId || line.licenseId,
-            launchYear: isNaN(launchYear as number) ? null : launchYear,
-            ean: ean.toString(),
-            createdAt: serverTimestamp()
-          });
-          importedCount++;
+          await batch.commit();
+          setImportProgress(Math.min(Math.round(((i + chunk.length) / total) * 100), 100));
         }
 
-        toast.success(`${importedCount} produtos importados com sucesso! ${skippedCount > 0 ? `(${skippedCount} pulados)` : ''}`);
+        toast.success(`${importedCount} produtos importados com sucesso! ${skippedCount > 0 ? `(${skippedCount} puladas)` : ''}`);
         setOpen(false);
         setFile(null);
       } catch (err) {
@@ -1217,6 +1294,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
         toast.error("Erro ao processar o arquivo Excel.");
       } finally {
         setIsUploading(false);
+        setImportProgress(0);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1260,7 +1338,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setOpen(false)} disabled={isUploading}>Cancelar</Button>
             <Button onClick={handleImport} disabled={!file || isUploading} className="bg-blue-600 hover:bg-blue-700">
-              {isUploading ? 'Importando...' : 'Importar Produtos'}
+              {isUploading ? `Importando (${importProgress}%)...` : 'Importar Produtos'}
             </Button>
           </div>
         </div>
@@ -2613,6 +2691,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const templateColumns = [
     "Licenciador (Nome fantasia)",
@@ -2686,7 +2765,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
     if (!file) return toast.error("Selecione um arquivo para importar.");
     
     setIsUploading(true);
-    console.log("Iniciando importação do arquivo:", file.name);
+    setImportProgress(0);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -2783,10 +2862,10 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
 
             await addDoc(collection(db, 'contracts'), contractData);
             importedCount++;
-            console.log(`Contrato ${importedCount} importado com sucesso.`);
           } catch (rowError) {
             console.error(`Erro ao processar linha ${i + 2}:`, rowError);
           }
+          setImportProgress(Math.min(Math.round(((i + 1) / jsonData.length) * 100), 100));
         }
         
         console.log(`Importação finalizada. Sucesso: ${importedCount}, Pulados: ${skippedCount}`);
@@ -2878,7 +2957,7 @@ function ImportContractsDialog({ licenses, lines, products }: { licenses: Licens
             disabled={!file || isUploading}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            {isUploading ? "Processando..." : "Iniciar Importação"}
+            {isUploading ? `Importando (${importProgress}%)...` : "Iniciar Importação"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2890,6 +2969,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const templateColumns = [
     "Responsável",
@@ -2943,6 +3023,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
     if (!file) return toast.error("Selecione um arquivo para importar.");
     
     setIsUploading(true);
+    setImportProgress(0);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -2960,6 +3041,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
 
         let importedCount = 0;
         let skippedCount = 0;
+        const total = jsonData.length;
 
         for (let i = 0; i < jsonData.length; i++) {
           const row = jsonData[i];
@@ -3034,6 +3116,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
           } catch (rowError) {
             console.error(`Erro na linha ${i + 2}:`, rowError);
           }
+          setImportProgress(Math.min(Math.round(((i + 1) / total) * 100), 100));
         }
         
         toast.success(`${importedCount} pagamentos importados!`);
@@ -3045,6 +3128,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
         toast.error("Erro ao processar o arquivo.");
       } finally {
         setIsUploading(false);
+        setImportProgress(0);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -3110,7 +3194,7 @@ function ImportPaymentsDialog({ contracts, licenses }: { contracts: Contract[], 
             Cancelar
           </Button>
           <Button onClick={handleImport} disabled={!file || isUploading} className="bg-blue-600 hover:bg-blue-700">
-            {isUploading ? "Processando..." : "Iniciar Importação"}
+            {isUploading ? `Importando (${importProgress}%)...` : "Iniciar Importação"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3122,6 +3206,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const templateColumns = [
     "Licenciador", "Linha", "Ano", "Mês", "Código", "Produto", "Qtd", "Vlr_Unitario", 
@@ -3149,6 +3234,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
     if (!file) return toast.error("Selecione um arquivo para importar.");
     
     setIsUploading(true);
+    setImportProgress(0);
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -3244,10 +3330,11 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
             createdAt: serverTimestamp()
           });
           importedCount++;
+          setImportProgress(Math.min(Math.round(((jsonData.indexOf(row) + 1) / jsonData.length) * 100), 100));
         }
 
         if (skippedCount > 0) {
-          toast.warning(`${importedCount} registros importados, ${skippedCount} ignorados por inconsistência (verifique o console para detalhes).`);
+          toast.warning(`${importedCount} registros importados, ${skippedCount} ignorados por inconsistência.`);
         } else {
           toast.success(`${importedCount} registros importados com sucesso!`);
         }
@@ -3258,6 +3345,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
         toast.error("Erro ao processar o arquivo.");
       } finally {
         setIsUploading(false);
+        setImportProgress(0);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -3320,7 +3408,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
             Cancelar
           </Button>
           <Button onClick={handleImport} disabled={!file || isUploading} className="bg-blue-600 hover:bg-blue-700">
-            {isUploading ? "Processando..." : "Iniciar Importação"}
+            {isUploading ? `Importando (${importProgress}%)...` : "Iniciar Importação"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -4122,42 +4210,209 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   );
 }
 
-function AddReportDialog({ contracts, lines, products }: { contracts: Contract[], lines: Line[], products: Product[] }) {
+function AddReportDialog({ contracts, lines, products, licenses, sales }: { contracts: Contract[], lines: Line[], products: Product[], licenses: License[], sales: Sale[] }) {
   const [open, setOpen] = useState(false);
+  const [licenseId, setLicenseId] = useState('');
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+  const [selectedLaunchYears, setSelectedLaunchYears] = useState<string[]>([]);
   const [contractId, setContractId] = useState('');
-  const [lineId, setLineId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [month, setMonth] = useState('');
-  const [year, setYear] = useState(new Date().getFullYear().toString());
-  const [quantity, setQuantity] = useState('');
-  const [netValue, setNetValue] = useState('');
+  const [royaltyRateType, setRoyaltyRateType] = useState('');
+  const [selectedProductSkus, setSelectedProductSkus] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [isCompiling, setIsCompiling] = useState(false);
+
+  const getSafeDate = (dateVal: string | number) => {
+    if (!dateVal) return new Date(NaN);
+    
+    const numVal = Number(dateVal);
+    if (!isNaN(numVal) && numVal > 10000 && numVal < 100000) {
+      // Pin to Midday UTC
+      return new Date((numVal - 25569) * 86400 * 1000 + (12 * 3600 * 1000));
+    }
+
+    if (typeof dateVal === 'string') {
+      const clean = dateVal.trim();
+      if (clean.includes('-') && !clean.includes('T')) {
+        const parts = clean.split('-');
+        if (parts.length === 3) {
+          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+        }
+      }
+      if (clean.includes('/')) {
+        const parts = clean.split('/');
+        if (parts.length === 3) {
+          let year = Number(parts[2]);
+          if (year < 100) year += 2000;
+          return new Date(year, Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+        }
+      }
+    }
+
+    const dt = new Date(dateVal);
+    if (!isNaN(dt.getTime())) {
+      return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
+    }
+    
+    return new Date(NaN);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!licenseId || !contractId || !royaltyRateType || !startDate || !endDate || selectedProductSkus.length === 0) {
+      toast.error('Preencha os dados e selecione ao menos 1 produto.');
+      return;
+    }
+
     const contract = contracts.find(c => c.id === contractId);
     if (!contract) return;
 
-    const royaltyValue = Number(netValue) * ((contract.royaltyRateNetSales1 || 0) / 100);
+    let royaltyRate = 0;
+    if (royaltyRateType === 'netSales1') royaltyRate = contract.royaltyRateNetSales1 || 0;
+    if (royaltyRateType === 'netPurchases') royaltyRate = contract.royaltyRateNetPurchases || 0;
+    if (royaltyRateType === 'fob') royaltyRate = contract.royaltyRateFOB || 0;
+
+    const startDt = new Date(startDate + 'T00:00:00');
+    const endDt = new Date(endDate + 'T23:59:59');
+
+    if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) {
+      toast.error('Datas inválidas.');
+      return;
+    }
+
+    setIsCompiling(true);
 
     try {
-      await addDoc(collection(db, 'reports'), {
-        contractId,
-        lineId,
-        productId,
-        month: Number(month),
-        year: Number(year),
-        quantity: Number(quantity),
-        netValue: Number(netValue),
-        royaltyValue,
-        createdAt: serverTimestamp()
+      const trimmedSelectedSkus = selectedProductSkus.map(sk => String(sk).trim());
+
+      const matchingSales = sales.filter(s => {
+        const saleSku = String(s.sku || "").trim();
+        if (!trimmedSelectedSkus.includes(saleSku)) return false;
+        const dt = getSafeDate(s.date);
+        return !isNaN(dt.getTime()) && dt >= startDt && dt <= endDt;
       });
-      toast.success('Relatório enviado com sucesso!');
+
+      console.log("DEBUG_SKU_CHECK: Total Sales matching in period:", matchingSales.length);
+      const uniqueSkus = Array.from(new Set(matchingSales.map(s => String(s.sku || "").trim()))).sort();
+      console.log("DEBUG_SKU_CHECK: SKUs found:", uniqueSkus);
+      
+      if (matchingSales.length === 0) {
+        toast.error('Nenhuma venda encontrada para os produtos e o período informados.');
+        setIsCompiling(false);
+        return;
+      }
+
+      const skuToProductId = new Map<string, string>();
+      const skuToLineId = new Map<string, string>();
+      for (const p of products) {
+        if (p.sku) {
+           const pSku = String(p.sku).trim();
+           skuToProductId.set(pSku, p.id);
+           skuToLineId.set(pSku, p.lineId);
+        }
+      }
+
+      const groups = new Map<string, any>();
+      for (const s of matchingSales) {
+        const dt = getSafeDate(s.date);
+        const month = dt.getMonth() + 1;
+        const year = dt.getFullYear();
+        const saleSku = String(s.sku || "").trim();
+        const prodId = skuToProductId.get(saleSku) || "unknown";
+        const saleLineId = skuToLineId.get(saleSku) || "unknown";
+
+        const key = `${prodId}-${month}-${year}`;
+        if (!groups.has(key)) {
+          groups.set(key, { quantity: 0, totalValue: 0, icms: 0, pis: 0, cofins: 0, ipi: 0, netValue: 0, lineId: saleLineId, prodId, month, year });
+        }
+        const g = groups.get(key);
+        g.quantity += (Number(s.quantity) || 0);
+        g.totalValue += (Number(s.totalValue) || 0);
+        g.icms += (Number(s.icms) || 0);
+        g.pis += (Number(s.pis) || 0);
+        g.cofins += (Number(s.cofins) || 0);
+        g.ipi += (Number(s.ipi) || 0);
+        const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
+        const saleNetValue = s.netValue !== undefined ? Number(s.netValue) : (Number(s.totalValue || 0) - saleTaxes);
+        g.netValue += saleNetValue;
+      }
+
+      const batchList = [];
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const g of groups.values()) {
+        const royaltyValue = g.netValue * royaltyRate;
+        const ref = doc(collection(db, 'reports'));
+        currentBatch.set(ref, {
+          contractId,
+          licenseId,
+          lineId: g.lineId,
+          productId: g.prodId === "unknown" ? "" : g.prodId,
+          month: g.month,
+          year: g.year,
+          quantity: g.quantity,
+          totalValue: g.totalValue,
+          icms: g.icms,
+          pis: g.pis,
+          cofins: g.cofins,
+          ipi: g.ipi,
+          netValue: g.netValue,
+          royaltyRate,
+          royaltyValue,
+          createdAt: serverTimestamp()
+        });
+        opCount++;
+        if (opCount >= 500) {
+          batchList.push(currentBatch);
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        batchList.push(currentBatch);
+      }
+
+      for (const batch of batchList) {
+        await batch.commit();
+      }
+
+      toast.success(`${groups.size} fechamentos mensais registrados a partir de ${matchingSales.length} vendas detectadas!`);
       setOpen(false);
-    } catch (err) {
-      toast.error('Erro ao enviar relatório.');
+      setLicenseId('');
+      setSelectedLineIds([]);
+      setContractId('');
+      setRoyaltyRateType('');
+      setSelectedProductSkus([]);
+      setStartDate('');
+      setEndDate('');
+    } catch (err: any) {
+      console.error(err);
+      if (err?.code === 'resource-exhausted' || (err?.message && err.message.includes('Quota exceeded'))) {
+        toast.error('Cota do Firebase excedida (20.000 gravações/dia atingida). Tente novamente amanhã.', { duration: 6000 });
+      } else {
+        toast.error('Erro ao compilar relatório.');
+      }
+    } finally {
+      setIsCompiling(false);
     }
   };
 
+  const availableLines = lines.filter(l => l.licenseId === licenseId);
+  const availableContracts = contracts.filter(c => c.licenseId === licenseId);
+  const availableLaunchYears = Array.from(new Set(products
+      .filter(p => p.licenseId === licenseId && (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)))
+      .map(p => p.launchYear)
+      .filter((y): y is number => !!y)
+  )).sort((a,b) => b - a);
+
+  const availableProducts = products.filter(p => 
+    p.licenseId === licenseId && 
+    (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)) && 
+    (selectedLaunchYears.length === 0 || selectedLaunchYears.includes(String(p.launchYear))) &&
+    !!p.sku
+  );
   const selectedContract = contracts.find(c => c.id === contractId);
 
   return (
@@ -4170,74 +4425,129 @@ function AddReportDialog({ contracts, lines, products }: { contracts: Contract[]
           </button>
         }
       />
-      <DialogContent>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Novo Relatório de Royalties</DialogTitle>
+          <DialogTitle>Gerar Novo Relatório de Royalties</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label>Contrato</Label>
-            <Select onValueChange={(v) => { setContractId(v); setLineId(''); setProductId(''); }} value={contractId}>
-              <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
+            <Label>Licenciador</Label>
+            <Select onValueChange={(v) => { 
+                setLicenseId(v); 
+                setSelectedLineIds([]); 
+                setSelectedLaunchYears([]);
+                setContractId(''); 
+                setSelectedProductSkus([]); 
+                setRoyaltyRateType(''); 
+              }} 
+              value={licenseId}
+            >
+              <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
               <SelectContent>
-                {[...contracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                  <SelectItem key={c.id} value={c.id}>Contrato {c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                {[...licenses].sort((a,b) => a.nomelicenciador.localeCompare(b.nomelicenciador)).map(l => (
+                  <SelectItem key={l.id} value={l.id}>{l.nomelicenciador}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Linha</Label>
-            <Select onValueChange={setLineId} value={lineId}>
-              <SelectTrigger><SelectValue placeholder="Selecione a linha" /></SelectTrigger>
-              <SelectContent>
-                {lines.filter(l => {
-                  const contract = contracts.find(c => c.id === contractId);
-                  return (contract?.lineIds || []).includes(l.id);
-                }).sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Produto</Label>
-            <Select onValueChange={setProductId} value={productId}>
-              <SelectTrigger><SelectValue placeholder="Selecione o produto" /></SelectTrigger>
-              <SelectContent>
-                {products.filter(p => {
-                  const contract = contracts.find(c => c.id === contractId);
-                  return (contract?.productIds || []).includes(p.id) && (lineId ? p.lineId === lineId : true);
-                }).sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id)).map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.name || `ID: ${p.id.slice(0,5)}`}</SelectItem>
-                ))}
-                {(!selectedContract || (selectedContract.productIds || []).length === 0) && (
-                  <SelectItem value="Geral">Geral / Não especificado</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+
+          {licenseId && (
             <div className="space-y-2">
-              <Label>Mês</Label>
-              <Input type="number" min="1" max="12" value={month} onChange={(e) => setMonth(e.target.value)} required />
+              <Label>Contrato do Licenciador</Label>
+              <Select onValueChange={(v) => { setContractId(v); setRoyaltyRateType(''); }} value={contractId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o contrato">
+                    {selectedContract?.contractNumber || (selectedContract ? `ID: ${selectedContract.id.slice(0,5)}` : "")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {availableContracts.sort((a,b) => (a.contractNumber||'').localeCompare(b.contractNumber||'')).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+          )}
+
+          {contractId && selectedContract && (
             <div className="space-y-2">
-              <Label>Ano</Label>
-              <Input type="number" value={year} onChange={(e) => setYear(e.target.value)} required />
+              <Label>Taxa de Royalties (do Contrato)</Label>
+              <Select onValueChange={setRoyaltyRateType} value={royaltyRateType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a taxa a aplicar">
+                    {royaltyRateType === 'netSales1' && typeof selectedContract.royaltyRateNetSales1 === 'number' && `${(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                    {royaltyRateType === 'netPurchases' && typeof selectedContract.royaltyRateNetPurchases === 'number' && `${(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                    {royaltyRateType === 'fob' && typeof selectedContract.royaltyRateFOB === 'number' && `${(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {typeof selectedContract.royaltyRateNetSales1 === 'number' && (
+                    <SelectItem value="netSales1">{(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Vendas)</SelectItem>
+                  )}
+                  {typeof selectedContract.royaltyRateNetPurchases === 'number' && (
+                    <SelectItem value="netPurchases">{(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Compras)</SelectItem>
+                  )}
+                  {typeof selectedContract.royaltyRateFOB === 'number' && (
+                    <SelectItem value="fob">{(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa FOB)</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+          )}
+
+          {licenseId && (
             <div className="space-y-2">
-              <Label>Quantidade</Label>
-              <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+              <Label className="text-xs text-slate-500 font-semibold uppercase">Filtro de Linhas (Opcional)</Label>
+              <MultiSelectDropdown
+                options={availableLines.map(l => ({ label: l.nomelinha, value: l.id }))}
+                selectedValues={selectedLineIds}
+                onChange={setSelectedLineIds}
+                placeholder="Todas as linhas do licenciador"
+              />
             </div>
+          )}
+
+          {licenseId && availableLaunchYears.length > 0 && (
+             <div className="space-y-2">
+               <Label className="text-xs text-slate-500 font-semibold uppercase">Ano de Lançamento (Opcional)</Label>
+               <MultiSelectDropdown
+                 options={availableLaunchYears.map(y => ({ label: String(y), value: String(y) }))}
+                 selectedValues={selectedLaunchYears}
+                 onChange={setSelectedLaunchYears}
+                 placeholder="Todos os anos"
+               />
+             </div>
+           )}
+
+          {licenseId && (
             <div className="space-y-2">
-              <Label>Valor Líquido (R$)</Label>
-              <Input type="number" step="0.01" value={netValue} onChange={(e) => setNetValue(e.target.value)} required />
+              <Label className="text-xs text-slate-500 font-semibold uppercase">Produtos a serem apurados</Label>
+              <MultiSelectDropdown
+                options={availableProducts.map(p => ({ label: `${p.sku} - ${p.name}`, value: String(p.sku) }))}
+                selectedValues={selectedProductSkus}
+                onChange={setSelectedProductSkus}
+                placeholder="Selecione os produtos"
+              />
+              <p className="text-[10px] text-slate-400">Mostrando {availableProducts.length} produtos disponíveis.</p>
             </div>
-          </div>
-          <Button type="submit" className="w-full">Salvar Relatório</Button>
+          )}
+
+          {licenseId && (
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-2">
+                <Label>Data Inicial (Vendas)</Label>
+                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Data Final (Vendas)</Label>
+                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+              </div>
+            </div>
+          )}
+
+          <Button type="submit" className="w-full mt-4" disabled={isCompiling}>
+            {isCompiling ? "Compilando Relatórios..." : "Gerar Relatório de Royalties"}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -5240,6 +5550,603 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
   );
 }
 
+function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
+  sales: Sale[],
+  licenses: License[],
+  lines: Line[],
+  categories: ProductCategory[],
+  products: Product[],
+  isAdmin: boolean
+}) {
+  const [selectedLicenses, setSelectedLicenses] = useState<string[]>([]);
+  const [selectedLines, setSelectedLines] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [selectedSkus, setSelectedSkus] = useState<string[]>([]);
+  const [selectedSaleMonths, setSelectedSaleMonths] = useState<string[]>([]);
+  const [selectedSaleYears, setSelectedSaleYears] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState(0);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
+  const monthMap: Record<string, string> = {
+    '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
+    '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
+    '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+  };
+
+  const getSafeDate = (dateVal: string | number) => {
+    if (!dateVal) return new Date(NaN);
+    
+    const numVal = Number(dateVal);
+    if (!isNaN(numVal) && numVal > 10000 && numVal < 100000) {
+      // Pin to Midday UTC to avoid timezone floor/ceiling issues
+      return new Date((numVal - 25569) * 86400 * 1000 + (12 * 3600 * 1000));
+    }
+
+    if (typeof dateVal === 'string') {
+      const clean = dateVal.trim();
+      // Handle YYYY-MM-DD as local midday
+      if (clean.includes('-') && !clean.includes('T')) {
+        const parts = clean.split('-');
+        if (parts.length === 3) {
+          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+        }
+      }
+      
+      // Handle DD/MM/YYYY specifically
+      if (clean.includes('/')) {
+        const parts = clean.split('/');
+        if (parts.length === 3) {
+          let year = Number(parts[2]);
+          if (year < 100) year += 2000;
+          return new Date(year, Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+        }
+      }
+    }
+
+    const dt = new Date(dateVal);
+    if (!isNaN(dt.getTime())) {
+      // If it looks like it was meant to be UTC Midnight, it might have shifted.
+      // We can't know for sure, but we can try to return the midday version.
+      return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
+    }
+    
+    return new Date(NaN);
+  };
+
+  const filteredSales = React.useMemo(() => {
+    return sales.filter(s => {
+      const saleSku = String(s.sku || "").trim();
+      if (selectedLicenses.length && !selectedLicenses.includes(s.licenseId)) return false;
+      if (selectedLines.length && !selectedLines.includes(s.lineId)) return false;
+      if (selectedCategories.length && !selectedCategories.includes(s.categoryId)) return false;
+      if (selectedYears.length && !selectedYears.includes(String(s.launchYear))) return false;
+      if (selectedSkus.length && !selectedSkus.includes(saleSku)) return false;
+      
+      const dt = getSafeDate(s.date);
+      if (!isNaN(dt.getTime())) {
+        const sm = String(dt.getMonth() + 1).padStart(2, '0');
+        const sy = String(dt.getFullYear());
+        if (selectedSaleMonths.length && !selectedSaleMonths.includes(sm)) return false;
+        if (selectedSaleYears.length && !selectedSaleYears.includes(sy)) return false;
+      }
+      return true;
+    });
+  }, [sales, selectedLicenses, selectedLines, selectedCategories, selectedYears, selectedSkus, selectedSaleMonths, selectedSaleYears]);
+
+  const allSaleMonths = React.useMemo(() => {
+    const months = new Set<string>();
+    sales.forEach(s => {
+      const dt = getSafeDate(s.date);
+      if(!isNaN(dt.getTime())) {
+         months.add(String(dt.getMonth() + 1).padStart(2, '0'));
+      }
+    });
+    return Array.from(months).sort();
+  }, [sales]);
+
+  const allSaleYears = React.useMemo(() => {
+    const years = new Set<string>();
+    sales.forEach(s => {
+      const dt = getSafeDate(s.date);
+      if(!isNaN(dt.getTime())) {
+         years.add(String(dt.getFullYear()));
+      }
+    });
+    return Array.from(years).sort();
+  }, [sales]);
+
+  const availableOptions = React.useMemo(() => {
+    // 1. Licenses available for filtering
+    const availableLicenses = licenses.filter(l => {
+      return products.some(p => {
+        const pSku = String(p.sku || "").trim();
+        const matchesOthers = 
+          (selectedLines.length === 0 || selectedLines.includes(p.lineId)) &&
+          (selectedCategories.length === 0 || selectedCategories.includes(p.categoryId || '')) &&
+          (selectedYears.length === 0 || selectedYears.includes(String(p.launchYear))) &&
+          (selectedSkus.length === 0 || selectedSkus.includes(pSku));
+        return matchesOthers && (p.licenseId === l.id);
+      });
+    });
+
+    // 2. Lines available for filtering
+    const availableLines = lines.filter(l => {
+      return products.some(p => {
+        const pSku = String(p.sku || "").trim();
+        const matchesOthers = 
+          (selectedLicenses.length === 0 || selectedLicenses.includes(p.licenseId || '')) &&
+          (selectedCategories.length === 0 || selectedCategories.includes(p.categoryId || '')) &&
+          (selectedYears.length === 0 || selectedYears.includes(String(p.launchYear))) &&
+          (selectedSkus.length === 0 || selectedSkus.includes(pSku));
+        return matchesOthers && (p.lineId === l.id);
+      });
+    });
+
+    // 3. Categories available for filtering
+    const availableCategories = categories.filter(c => {
+      return products.some(p => {
+        const pSku = String(p.sku || "").trim();
+        const matchesOthers = 
+          (selectedLicenses.length === 0 || selectedLicenses.includes(p.licenseId || '')) &&
+          (selectedLines.length === 0 || selectedLines.includes(p.lineId)) &&
+          (selectedYears.length === 0 || selectedYears.includes(String(p.launchYear))) &&
+          (selectedSkus.length === 0 || selectedSkus.includes(pSku));
+        return matchesOthers && (p.categoryId === c.id);
+      });
+    });
+
+    // 4. Years available for filtering
+    const availableYears = Array.from(new Set(products
+      .filter(p => {
+        const pSku = String(p.sku || "").trim();
+        return (selectedLicenses.length === 0 || selectedLicenses.includes(p.licenseId || '')) &&
+               (selectedLines.length === 0 || selectedLines.includes(p.lineId)) &&
+               (selectedCategories.length === 0 || selectedCategories.includes(p.categoryId || '')) &&
+               (selectedSkus.length === 0 || selectedSkus.includes(pSku));
+      })
+      .map(p => p.launchYear)
+      .filter((y): y is number => !!y)
+    ));
+
+    // 5. SKUs available for filtering
+    const availableSkus = Array.from(new Set(products
+      .filter(p => {
+        const pSku = String(p.sku || "").trim();
+        return (selectedLicenses.length === 0 || selectedLicenses.includes(p.licenseId || '')) &&
+               (selectedLines.length === 0 || selectedLines.includes(p.lineId)) &&
+               (selectedCategories.length === 0 || selectedCategories.includes(p.categoryId || '')) &&
+               (selectedYears.length === 0 || selectedYears.includes(String(p.launchYear)));
+      })
+      .map(p => String(p.sku || "").trim())
+      .filter((s): s is string => !!s)
+    ));
+
+    return {
+      licenses: availableLicenses,
+      lines: availableLines,
+      categories: availableCategories,
+      years: availableYears,
+      skus: availableSkus,
+    };
+  }, [licenses, lines, categories, products, selectedLicenses, selectedLines, selectedCategories, selectedYears, selectedSkus]);
+
+  const handleClearAllSales = async () => {
+    setShowConfirmDelete(false);
+    setIsDeleting(true);
+    setDeleteProgress(0);
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    try {
+      const totalSales = sales.length;
+      if (totalSales === 0) {
+        setIsDeleting(false);
+        return;
+      }
+
+      const batchSize = 500;
+      const batches = [];
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const sale of sales) {
+        if (!sale.id) continue;
+        currentBatch.delete(doc(db, 'sales', sale.id));
+        opCount++;
+
+        if (opCount === batchSize) {
+          batches.push(currentBatch);
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        batches.push(currentBatch);
+      }
+
+      let committedCount = 0;
+      for (let i = 0; i < batches.length; i++) {
+        await batches[i].commit();
+        committedCount += (i === batches.length - 1 && opCount > 0) ? opCount : batchSize;
+        const progress = Math.min(Math.round((committedCount / totalSales) * 100), 100);
+        setDeleteProgress(progress);
+      }
+
+      toast.success(`${totalSales} vendas foram apagadas da base.`);
+    } catch (error) {
+      console.error("Erro ao apagar vendas:", error);
+      toast.error("Houve um erro ao apagar as vendas da base de dados.");
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress(0);
+    }
+  };
+
+  const groupedSales = React.useMemo(() => {
+    const groups = new Map<string, any>();
+    filteredSales.forEach(s => {
+      const dt = getSafeDate(s.date);
+      const m = isNaN(dt.getTime()) ? '00' : String(dt.getMonth() + 1).padStart(2, '0');
+      const y = isNaN(dt.getTime()) ? '0000' : String(dt.getFullYear());
+      // Clean SKU for grouping
+      const cleanSku = String(s.sku || "").trim();
+      const key = `${y}-${m}-${cleanSku}`;
+      
+      if (!groups.has(key)) {
+        groups.set(key, {
+          sku: cleanSku,
+          description: s.description,
+          month: m,
+          year: y,
+          quantity: 0,
+          totalValue: 0,
+          totalTaxes: 0,
+          netValue: 0,
+          count: 0
+        });
+      }
+      
+      const g = groups.get(key);
+      const saleQuantity = Number(s.quantity) || 0;
+      const saleTotalValue = Number(s.totalValue) || 0;
+      const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
+      const saleNetValue = Number(s.netValue) || 0;
+
+      g.quantity += saleQuantity;
+      g.totalValue += saleTotalValue;
+      g.totalTaxes += saleTaxes;
+      g.netValue += saleNetValue;
+      g.count++;
+    });
+    return Array.from(groups.values()).sort((a, b) => {
+        if (a.year !== b.year) return Number(b.year) - Number(a.year);
+        if (a.month !== b.month) return Number(b.month) - Number(a.month);
+        return a.sku.localeCompare(b.sku);
+    });
+  }, [filteredSales]);
+
+  const [viewMode, setViewMode] = useState<'grouped' | 'individual'>('grouped');
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-bold tracking-tight text-slate-800">Relatório de Vendas</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Exibição:</span>
+            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              <button 
+                onClick={() => setViewMode('grouped')}
+                className={cn(
+                  "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                  viewMode === 'grouped' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                Agrupado (SKU/Mês)
+              </button>
+              <button 
+                onClick={() => setViewMode('individual')}
+                className={cn(
+                  "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                  viewMode === 'individual' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                Individual
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          {isAdmin && sales.length > 0 && (
+            <Dialog open={showConfirmDelete} onOpenChange={setShowConfirmDelete}>
+              <DialogTrigger 
+                className={cn(buttonVariants({ variant: "destructive" }), "gap-2 min-w-[140px]")}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Apagando {deleteProgress}%
+                  </>
+                ) : (
+                  <>
+                    <LogOut size={16} className="rotate-90" /> 
+                    Apagar Base
+                  </>
+                )}
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="text-red-600 flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5" />
+                    Confirmar Exclusão Total
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="py-4 space-y-2 text-slate-600">
+                  <p className="font-semibold text-slate-900">Esta ação é irreversível.</p>
+                  <p>Você tem certeza que deseja apagar absolutamente <span className="font-bold underline">todas as {sales.length} vendas</span> da base de dados?</p>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button variant="outline" onClick={() => setShowConfirmDelete(false)}>Cancelar</Button>
+                  <Button variant="destructive" onClick={handleClearAllSales}>Sim, Apagar Tudo</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+          <ImportSalesDialog products={products} />
+        </div>
+      </div>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader>
+          <div className="flex flex-col lg:flex-row gap-4 w-full">
+            {/* Licenciador Filter */}
+            <div className="w-full lg:flex-1 space-y-2">
+              <Label className="text-[11px] text-slate-400">Licenciador</Label>
+              <MultiSelectDropdown
+                options={availableOptions.licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                selectedValues={selectedLicenses}
+                onChange={setSelectedLicenses}
+                placeholder="Todos"
+              />
+            </div>
+
+            {/* Linha Filter */}
+            <div className="w-full lg:flex-1 space-y-2">
+              <Label className="text-[11px] text-slate-400">Linha</Label>
+              <MultiSelectDropdown
+                options={availableOptions.lines.map(l => ({ label: l.nomelinha, value: l.id }))}
+                selectedValues={selectedLines}
+                onChange={setSelectedLines}
+                placeholder="Todas"
+              />
+            </div>
+
+            {/* Categoria Filter */}
+            <div className="w-full lg:flex-[1.2] space-y-2">
+              <Label className="text-[11px] text-slate-400">Categoria</Label>
+              <MultiSelectDropdown
+                options={availableOptions.categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))}
+                selectedValues={selectedCategories}
+                onChange={setSelectedCategories}
+                placeholder="Todas"
+              />
+            </div>
+
+            {/* Ano Filter */}
+            <div className="w-full lg:w-28 shrink-0 space-y-2">
+              <Label className="text-[11px] text-slate-400">Ano Lanç.</Label>
+              <MultiSelectDropdown
+                options={availableOptions.years.sort((a,b) => b-a).map(y => ({ label: String(y), value: String(y) }))}
+                selectedValues={selectedYears}
+                onChange={setSelectedYears}
+                placeholder="Todos"
+              />
+            </div>
+
+            {/* SKU Filter */}
+            <div className="w-full lg:flex-[2.5] space-y-2">
+              <Label className="text-[11px] text-slate-400">Código SKU</Label>
+              <MultiSelectDropdown
+                options={availableOptions.skus.sort().map(sku => {
+                  const prod = products.find(p => String(p.sku || "").trim() === String(sku || "").trim());
+                  const displayName = prod ? `${sku} - ${prod.name}` : sku;
+                  return { label: displayName, value: sku };
+                })}
+                selectedValues={selectedSkus}
+                onChange={setSelectedSkus}
+                placeholder="Todos"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col lg:flex-row gap-4 w-full mt-4">
+            {/* Sale Month Filter */}
+            <div className="w-full lg:flex-[1] space-y-2">
+              <Label className="text-[11px] text-slate-400">Mês da Venda</Label>
+              <MultiSelectDropdown
+                options={allSaleMonths.map(m => ({ label: monthMap[m] || m, value: m }))}
+                selectedValues={selectedSaleMonths}
+                onChange={setSelectedSaleMonths}
+                placeholder="Todos"
+              />
+            </div>
+
+            {/* Sale Year Filter */}
+            <div className="w-full lg:flex-[1] space-y-2">
+              <Label className="text-[11px] text-slate-400">Ano da Venda</Label>
+              <MultiSelectDropdown
+                options={allSaleYears.map(y => ({ label: y, value: y }))}
+                selectedValues={selectedSaleYears}
+                onChange={setSelectedSaleYears}
+                placeholder="Todos"
+              />
+            </div>
+            
+            <div className="w-full lg:flex-[5] space-y-2"></div>
+          </div>
+
+          {(selectedLicenses.length > 0 || selectedLines.length > 0 || selectedCategories.length > 0 || selectedYears.length > 0 || selectedSkus.length > 0 || selectedSaleMonths.length > 0 || selectedSaleYears.length > 0) && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="mt-4 text-blue-600 h-7 text-xs"
+              onClick={() => {
+                setSelectedLicenses([]);
+                setSelectedLines([]);
+                setSelectedCategories([]);
+                setSelectedYears([]);
+                setSelectedSkus([]);
+                setSelectedSaleMonths([]);
+                setSelectedSaleYears([]);
+              }}
+            >
+              <X size={14} className="mr-1" /> Limpar Filtros
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border border-slate-200 overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                <tr>
+                  {viewMode === 'grouped' && <th className="px-4 py-3">Mês/Ano</th>}
+                  {viewMode === 'individual' && <th className="px-4 py-3">Data</th>}
+                  <th className="px-4 py-3">Código SKU</th>
+                  <th className="px-4 py-3">Descrição</th>
+                  <th className="px-4 py-3">Quantidade</th>
+                  {viewMode === 'individual' && <th className="px-4 py-3 text-right">Valor Unitário</th>}
+                  <th className="px-4 py-3 text-right">Valor Total</th>
+                  <th className="px-4 py-3 text-right">Total Impostos</th>
+                  <th className="px-4 py-3 text-right">Total Líquido</th>
+                  {viewMode === 'grouped' && <th className="px-4 py-3 text-center">Registros</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {viewMode === 'grouped' ? (
+                  groupedSales.map((group) => (
+                    <tr key={group.sku + group.month + group.year} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-slate-600">{group.month}/{group.year}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{group.sku}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={group.description}>{group.description}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{group.quantity.toLocaleString('pt-BR')}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalTaxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">{group.netValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      <td className="px-4 py-3 text-slate-400 text-[11px] text-center">{group.count} lin.</td>
+                    </tr>
+                  ))
+                ) : (
+                  filteredSales.map((sale) => {
+                    const totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
+                    const totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
+                    
+                    return (
+                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{formatDateBR(sale.date)}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{sale.sku}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">
+                        {sale.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">
+                        {sale.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">
+                        {totalImpostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">
+                        {totalLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                    </tr>
+                  )})
+                )}
+                {filteredSales.length === 0 && (
+                  <tr>
+                    <td colSpan={viewMode === 'grouped' ? 9 : 7} className="px-4 py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center gap-2">
+                        <PackageSearch size={32} strokeWidth={1.5} />
+                        <p>Nenhuma venda encontrada para os filtros selecionados.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {filteredSales.length > 0 && (
+                <tfoot className="bg-slate-50 font-semibold border-t border-slate-200">
+                  <tr>
+                    <td colSpan={3} className="px-4 py-4 text-right text-slate-500 uppercase tracking-wider text-[11px]">Totais</td>
+                    <td className="px-4 py-4 text-sm text-slate-600">{filteredSales.reduce((acc, s) => acc + (Number(s.quantity) || 0), 0).toLocaleString('pt-BR')}</td>
+                    {viewMode === 'individual' && <td className="px-4 py-4 text-right"></td>}
+                    <td className="px-4 py-4 text-sm text-slate-600 text-right">
+                      {filteredSales.reduce((acc, s) => acc + (Number(s.totalValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-600 text-right">
+                      {filteredSales.reduce((acc, s) => acc + ((Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-900 text-right font-bold">
+                      {filteredSales.reduce((acc, s) => acc + (Number(s.netValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    {viewMode === 'grouped' && <td className="px-4 py-4"></td>}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      
+      {isAdmin && sales.length === 0 && (
+        <div className="flex justify-center">
+          <Button 
+            variant="outline" 
+            className="gap-2 border-dashed border-2"
+            onClick={async () => {
+              // Seed dummy sales data for demonstration
+              const dummySales = [
+                {
+                  sku: 'AG-2026-STITCH',
+                  description: 'Agenda Diária Stitch 2026',
+                  quantity: 150,
+                  unitPrice: 45.90,
+                  totalValue: 6885.00,
+                  date: new Date().toISOString(),
+                  licenseId: licenses[0]?.id || '1',
+                  lineId: lines[0]?.id || '1',
+                  categoryId: categories[0]?.id || '1',
+                  launchYear: 2026
+                },
+                {
+                  sku: 'AG-2026-MICKEY',
+                  description: 'Agenda Diária Mickey 2026',
+                  quantity: 200,
+                  unitPrice: 42.90,
+                  totalValue: 8580.00,
+                  date: new Date().toISOString(),
+                  licenseId: licenses[0]?.id || '1',
+                  lineId: lines[0]?.id || '1',
+                  categoryId: categories[0]?.id || '1',
+                  launchYear: 2026
+                }
+              ];
+              
+              const promises = dummySales.map(s => addDoc(collection(db, 'sales'), s));
+              await Promise.all(promises);
+              toast.success("Dados de vendas carregados com sucesso (Simulação)");
+            }}
+          >
+            <Database size={16} /> Carregar Dados de Exemplo (Integração)
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }: {
   reports: RoyaltyReport[],
   contracts: Contract[],
@@ -5249,49 +6156,105 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   isAdmin: boolean
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedLicenseId, setSelectedLicenseId] = useState('');
+  const [selectedContractId, setSelectedContractId] = useState('');
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+  const [selectedLaunchYears, setSelectedLaunchYears] = useState<string[]>([]);
+  const [selectedYears, setSelectedYears] = useState<string[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
 
-  const groupedReports = React.useMemo(() => {
-    const groups: Record<string, any> = {};
-    reports.forEach((r: any) => {
-      const key = `${r.contractId}-${r.lineId}-${r.year}-${r.month}`;
-      if (!groups[key]) {
-        groups[key] = {
+  const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines } = React.useMemo(() => {
+    const yearsSet = new Set<number>();
+    const monthsSet = new Set<number>();
+    const launchYearsSet = new Set<number>();
+
+    reports.forEach(r => {
+      if (selectedLicenseId && r.licenseId !== selectedLicenseId) return;
+      if (selectedLineIds.length > 0 && (!r.lineId || !selectedLineIds.includes(r.lineId))) return;
+
+      yearsSet.add(r.year);
+      monthsSet.add(r.month);
+      
+      const p = products.find(prod => prod.id === r.productId);
+      if (p?.launchYear) {
+        launchYearsSet.add(p.launchYear);
+      }
+    });
+
+    return {
+      availableYears: Array.from(yearsSet).sort((a,b)=>b-a),
+      availableMonths: Array.from(monthsSet).sort((a,b)=>a-b),
+      availableLaunchYears: Array.from(launchYearsSet).sort((a,b)=>b-a),
+      availableContracts: contracts.filter(c => c.licenseId === selectedLicenseId),
+      availableLines: lines.filter(l => l.licenseId === selectedLicenseId)
+    };
+  }, [reports, products, selectedLicenseId, selectedLineIds, contracts, lines]);
+
+  const filteredReports = React.useMemo(() => {
+    return reports.filter(r => {
+      if (selectedLicenseId && r.licenseId !== selectedLicenseId) return false;
+      if (selectedContractId && r.contractId !== selectedContractId) return false;
+      if (selectedLineIds.length > 0 && !selectedLineIds.includes(r.lineId)) return false;
+      if (selectedYears.length > 0 && !selectedYears.includes(String(r.year))) return false;
+      if (selectedMonths.length > 0 && !selectedMonths.includes(String(r.month))) return false;
+
+      if (selectedLaunchYears.length > 0) {
+        const p = products.find(prod => prod.id === r.productId);
+        if (!p || !p.launchYear || !selectedLaunchYears.includes(String(p.launchYear))) return false;
+      }
+
+      return true;
+    });
+  }, [reports, products, selectedLicenseId, selectedContractId, selectedLineIds, selectedYears, selectedMonths, selectedLaunchYears]);
+
+  const tableData = React.useMemo(() => {
+    const groups = new Map<string, any>();
+
+    filteredReports.forEach(r => {
+      const key = `${r.year}-${r.month}-${r.licenseId}-${r.lineId}-${r.contractId}-${r.royaltyRate || 0}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
           id: key,
           reportIds: [r.id],
-          contractId: r.contractId,
-          lineId: r.lineId,
           year: r.year,
           month: r.month,
+          licenseId: r.licenseId,
+          contractId: r.contractId,
+          lineId: r.lineId,
+          royaltyRate: r.royaltyRate || 0,
           quantity: 0,
-          netValue: 0,
+          totalValue: 0,
           icms: 0,
           pis: 0,
           cofins: 0,
           ipi: 0,
-          royaltyValue: 0,
-          category: r.category,
-          anoVA: r.anoVA,
-          costPrice: 0,
-          cmf: r.cmf,
-        };
+          netValue: 0,
+          royaltyValue: 0
+        });
       } else {
-        groups[key].reportIds.push(r.id);
+        groups.get(key).reportIds.push(r.id);
       }
-      groups[key].quantity += (r.quantity || 0);
-      groups[key].netValue += (r.netValue || 0);
-      groups[key].icms += (r.icms || 0);
-      groups[key].pis += (r.pis || 0);
-      groups[key].cofins += (r.cofins || 0);
-      groups[key].ipi += (r.ipi || 0);
-      groups[key].royaltyValue += (r.royaltyValue || 0);
-      groups[key].costPrice += (r.costPrice || 0);
+
+      const g = groups.get(key);
+      g.quantity += r.quantity || 0;
+      g.totalValue += r.totalValue || 0;
+      g.icms += r.icms || 0;
+      g.pis += r.pis || 0;
+      g.cofins += r.cofins || 0;
+      g.ipi += r.ipi || 0;
+      g.netValue += r.netValue || 0;
+      g.royaltyValue += r.royaltyValue || 0;
     });
-    return Object.values(groups);
-  }, [reports]);
+
+    return Array.from(groups.values()).sort((a, b) => {
+      if (b.year !== a.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [filteredReports]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedIds(groupedReports.map((r: any) => r.id));
+      setSelectedIds(tableData.map((r: any) => r.id));
     } else {
       setSelectedIds([]);
     }
@@ -5307,7 +6270,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
     if (selectedIds.length === 0) return;
     
     try {
-      const idsToDelete = groupedReports
+      const idsToDelete = tableData
         .filter(g => selectedIds.includes(g.id))
         .flatMap(g => g.reportIds);
 
@@ -5321,151 +6284,267 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   };
 
   return (
-    <Card className="border-slate-200 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div>
-          <CardTitle>Royalties</CardTitle>
-          <CardDescription>Histórico de vendas e royalties reportados mensalmente</CardDescription>
-        </div>
-        {isAdmin && reports.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Dialog>
-              <DialogTrigger nativeButton={true} render={
-                <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
-                  <Trash2 size={14} /> Limpar Tudo
-                </button>
-              } />
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Limpar Todos os Registros</DialogTitle>
-                  <DialogDescription>
-                    Isso excluirá permanentemente TODOS os {reports.length} registros de royalties do banco de dados. Esta ação não pode ser desfeita.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => {}}>Cancelar</Button>
-                  <Button variant="destructive" onClick={async () => {
-                    try {
-                      const promises = reports.map((r: any) => deleteDoc(doc(db, 'reports', r.id)));
-                      await Promise.all(promises);
-                      toast.success("Todos os registros foram excluídos!");
-                    } catch (err) {
-                      toast.error("Erro ao excluir registros.");
-                    }
-                  }}>Confirmar Exclusão Total</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+    <div className="space-y-4">
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 p-4">
+          <div className="flex flex-row items-center justify-between space-y-0 mb-4">
+            <div>
+              <CardTitle className="text-sm font-semibold text-slate-800">Filtros Livres de Apuração (Itens Salvos)</CardTitle>
+            </div>
+            {isAdmin && reports.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Dialog>
+                  <DialogTrigger nativeButton={true} render={
+                    <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
+                      <Trash2 size={14} /> Limpar Tudo
+                    </button>
+                  } />
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Limpar Todos os Registros</DialogTitle>
+                      <DialogDescription>
+                        Isso excluirá permanentemente TODOS os {reports.length} registros de royalties do banco de dados. Esta ação não pode ser desfeita.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => {}}>Cancelar</Button>
+                      <Button variant="destructive" onClick={async () => {
+                        try {
+                          const promises = reports.map((r: any) => deleteDoc(doc(db, 'reports', r.id)));
+                          await Promise.all(promises);
+                          toast.success("Todos os registros foram excluídos!");
+                        } catch (err) {
+                          toast.error("Erro ao excluir registros.");
+                        }
+                      }}>Confirmar Exclusão Total</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
+                <span className="text-xs font-medium text-slate-500">{selectedIds.length} grupos selecionados</span>
+                <Dialog>
+                  <DialogTrigger nativeButton={true} render={
+                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
+                      <Trash2 size={14} /> Excluir Selecionados
+                    </button>
+                  } />
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Confirmar Exclusão em Massa</DialogTitle>
+                      <DialogDescription>
+                        Tem certeza que deseja excluir os registros selecionados do banco de dados?
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => {}}>Cancelar</Button>
+                      <Button variant="destructive" onClick={handleDeleteSelected}>Confirmar Exclusão</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </div>
-        )}
-        {selectedIds.length > 0 && (
-          <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
-            <span className="text-xs font-medium text-slate-500">{selectedIds.length} selecionados</span>
-            <Dialog>
-              <DialogTrigger nativeButton={true} render={
-                <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
-                  <Trash2 size={14} /> Excluir Selecionados
-                </button>
-              } />
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Confirmar Exclusão em Massa</DialogTitle>
-                  <DialogDescription>
-                    Tem certeza que deseja excluir os registros selecionados? Esta ação não pode ser desfeita.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => {}}>Cancelar</Button>
-                  <Button variant="destructive" onClick={handleDeleteSelected}>Confirmar Exclusão</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        )}
-      </CardHeader>
-      <CardContent>
-        <div className="rounded-md border border-slate-200 overflow-x-auto">
-          <table className="w-full text-[10px] text-left min-w-[1500px]">
-            <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider">
-              <tr>
-                <th className="px-2 py-3 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    checked={selectedIds.length === groupedReports.length && groupedReports.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-                <th className="px-2 py-3">Licenciador</th>
-                <th className="px-2 py-3">Linha</th>
-                <th className="px-2 py-3">Ano</th>
-                <th className="px-2 py-3">Mês</th>
-                <th className="px-2 py-3">Qtd</th>
-                <th className="px-2 py-3">Vlr_Total</th>
-                <th className="px-2 py-3">ICMS</th>
-                <th className="px-2 py-3">Pis</th>
-                <th className="px-2 py-3">Cofins</th>
-                <th className="px-2 py-3">IPI</th>
-                <th className="px-2 py-3">Total Líquido</th>
-                <th className="px-2 py-3">Royalties</th>
-                <th className="px-2 py-3">Preço de custo</th>
-                <th className="px-2 py-3">CMF</th>
-                {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {groupedReports.map((report: any) => {
-                const line = lines.find((l: any) => l.id === report.lineId);
-                const contract = contracts.find((c: any) => c.id === report.contractId);
-                const license = licenses.find((l: any) => l.id === contract?.licenseId);
-                const symbol = getCurrencySymbol(contract?.currency || 'BRL');
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Licenciador</Label>
+              <SearchableSelect
+                className="h-8 text-xs"
+                options={[
+                  { label: "Todos os Licenciadores", value: "ALL" },
+                  ...[...licenses].sort((a,b)=>a.nomelicenciador.localeCompare(b.nomelicenciador)).map(l => ({ label: l.nomelicenciador, value: l.id }))
+                ]}
+                value={selectedLicenseId || "ALL"}
+                onValueChange={(v) => { 
+                  setSelectedLicenseId(v==="ALL" ? "" : v); 
+                  setSelectedLineIds([]); 
+                  setSelectedContractId(''); 
+                }}
+                placeholder="Todos os Licenciadores"
+              />
+            </div>
 
-                return (
-                  <tr key={report.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.includes(report.id) ? 'bg-blue-50/50' : ''}`}>
-                    <td className="px-2 py-4">
-                      <input 
-                        type="checkbox" 
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        checked={selectedIds.includes(report.id)}
-                        onChange={() => handleSelectRow(report.id)}
-                      />
-                    </td>
-                    <td className="px-2 py-4 font-medium text-slate-900">{license?.nomelicenciador || (contract?.licenseId ? `ID: ${contract.licenseId.slice(0,5)}` : '-')}</td>
-                    <td className="px-2 py-4 text-slate-600">{line?.nomelinha || (report.lineId ? `ID: ${report.lineId.slice(0,5)}` : 'Geral')}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.year}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.month}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.quantity}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.icms?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.pis?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.cofins?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.ipi?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-4 font-semibold text-emerald-600">{report.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.costPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{report.cmf || '-'}</td>
-                    {isAdmin && (
-                      <td className="px-2 py-4 text-right">
-                        <div className="flex justify-end items-center gap-1">
-                          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600 h-6 w-6 p-0">
-                            <Settings size={12} />
-                          </Button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-              {groupedReports.length === 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs">Contrato</Label>
+              <SearchableSelect
+                disabled={!selectedLicenseId}
+                className="h-8 text-xs"
+                options={[
+                  { label: "Todos os Contratos", value: "ALL" },
+                  ...availableContracts.map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
+                ]}
+                value={selectedContractId || "ALL"}
+                onValueChange={(v) => { setSelectedContractId(v==="ALL" ? "" : v); }}
+                placeholder="Selecione um contrato"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Linha(s)</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={availableLines.map(l => ({ label: l.nomelinha, value: l.id }))}
+                selectedValues={selectedLineIds}
+                onChange={setSelectedLineIds}
+                placeholder="Todas as Linhas"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Ano de Lançamento</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={availableLaunchYears.map(y => ({ label: String(y), value: String(y) }))}
+                selectedValues={selectedLaunchYears}
+                onChange={setSelectedLaunchYears}
+                placeholder="Todos os Anos"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Ano (Venda)</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={availableYears.map(y => ({ label: String(y), value: String(y) }))}
+                selectedValues={selectedYears}
+                onChange={setSelectedYears}
+                placeholder="Todos os Anos"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Mês (Venda)</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={availableMonths.map(m => ({ label: String(m).padStart(2, '0'), value: String(m) }))}
+                selectedValues={selectedMonths}
+                onChange={setSelectedMonths}
+                placeholder="Todos os Meses"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left border-t border-slate-200 min-w-max">
+              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
-                  <td colSpan={16} className="px-4 py-8 text-center text-slate-400">Nenhum relatório encontrado.</td>
+                  <th className="px-4 py-3 w-10">
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={selectedIds.length === tableData.length && tableData.length > 0}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="px-4 py-3 whitespace-nowrap">Ano</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Mês</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Licenciador</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Linha</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Contrato</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Quantidade</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Total</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">ICMS</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">PIS</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">COFINS</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">IPI</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Líquido</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Taxa Royalties</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Royalties</th>
+                  <th className="px-4 py-3 text-center whitespace-nowrap">Detalhes</th>
                 </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {tableData.map((row, i) => {
+                  const l = licenses.find(x => x.id === row.licenseId);
+                  const ln = lines.find(x => x.id === row.lineId);
+                  const contract = contracts.find(c => c.id === row.contractId);
+
+                  const downloadCSV = () => {
+                    const groupReports = reports.filter(r => row.reportIds.includes(r.id));
+                    const headers = ["Ano", "Mês", "Licenciador", "Linha", "SKU", "Produto", "Qtd", "Valor Total", "ICMS", "PIS", "COFINS", "IPI", "Valor Líquido", "Taxa", "Valor Royalties"];
+                    const csvRows = groupReports.map(r => {
+                      const prod = products.find(p => p.id === r.productId);
+                      return [
+                        r.year, r.month, l?.nomelicenciador || '', ln?.nomelinha || '', prod?.sku || '', prod?.name || r.productId || '',
+                        r.quantity, r.totalValue, r.icms, r.pis, r.cofins, r.ipi, r.netValue, r.royaltyRate, r.royaltyValue
+                      ].map(v => String(v).replace('.', ',')).join(';');
+                    });
+                    const csvString = [headers.join(';'), ...csvRows].join('\n');
+                    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `relatorio_${row.year}_${row.month}_${l?.nomelicenciador}.csv`;
+                    link.click();
+                  };
+
+                  return (
+                    <tr key={row.id} className={`hover:bg-blue-50/50 transition-colors ${selectedIds.includes(row.id) ? 'bg-blue-50/50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedIds.includes(row.id)}
+                          onChange={() => handleSelectRow(row.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{row.year}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{String(row.month).padStart(2, '0')}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap font-medium">{l?.nomelicenciador || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{ln?.nomelinha || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{contract?.contractNumber || '-'}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.quantity.toLocaleString('pt-BR')}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.icms.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.pis.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.cofins.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.ipi.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap font-medium">{row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.royaltyRate > 0 ? `${(row.royaltyRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '-'}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
+                        {row.royaltyValue > 0 ? row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <button onClick={downloadCSV} className="text-blue-600 hover:text-blue-800">
+                          <FileDown size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {tableData.length === 0 && (
+                  <tr>
+                    <td colSpan={15} className="px-4 py-12 text-center text-slate-400">Nenhum relatório encontrado no banco de dados com os filtros atuais.</td>
+                  </tr>
+                )}
+              </tbody>
+              {tableData.length > 0 && (
+                <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800">
+                  <tr>
+                    <td colSpan={6} className="px-4 py-4 text-right whitespace-nowrap text-sm">TOTAL</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{tableData.reduce((acc, r)=>acc+r.quantity, 0).toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{tableData.reduce((acc, r)=>acc+r.totalValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.icms, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.pis, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.cofins, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.ipi, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.netValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">-</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">
+                      {tableData.reduce((acc, r)=>acc+r.royaltyValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               )}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -6535,7 +7614,7 @@ function ProductCategoriesView({ categories, isAdmin }: { categories: ProductCat
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 pb-2">
           {sortedCategories.slice(0, pageSize).map(cat => (
             <div key={cat.id} className="border p-3 rounded flex justify-between items-center bg-white shadow-sm hover:border-slate-300 transition-colors">
               {editingId === cat.id ? (
@@ -6664,17 +7743,6 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      try {
-        await deleteDoc(doc(db, 'products', id));
-        toast.success('Produto excluído com sucesso!');
-      } catch (error) {
-        toast.error('Erro ao excluir produto.');
-      }
-    }
-  };
-
   const handleBatchDelete = async () => {
     if (window.confirm(`Tem certeza que deseja excluir ${selectedProductIds.length} produtos?`)) {
       try {
@@ -6700,66 +7768,73 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
           <div className="flex flex-wrap items-end gap-4 mb-6">
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Categoria</Label>
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger className="min-w-[150px] w-auto">
-                  <SelectValue placeholder="Todas">
-                    {filterCategory === 'all' ? 'Todas as Categorias' : (categories.find(c => c.id === filterCategory)?.nomeCategoriaProduto)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as Categorias</SelectItem>
-                  {[...categories].sort((a, b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || '')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="h-8 text-xs min-w-[150px]"
+                options={[
+                  { label: "Todas as Categorias", value: "all" },
+                  ...[...categories].sort((a,b)=>(a.nomeCategoriaProduto||'').localeCompare(b.nomeCategoriaProduto||'')).map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))
+                ]}
+                value={filterCategory}
+                onValueChange={setFilterCategory}
+                placeholder="Todas"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Linha</Label>
-              <Select value={filterLine} onValueChange={setFilterLine}>
-                <SelectTrigger className="min-w-[150px] w-auto">
-                  <SelectValue placeholder="Todas">
-                    {filterLine === 'all' ? 'Todas as Linhas' : (lines.find(l => l.id === filterLine)?.nomelinha)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as Linhas</SelectItem>
-                  {[...lines].sort((a, b) => (a.nomelinha || '').localeCompare(b.nomelinha || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="h-8 text-xs min-w-[150px]"
+                options={[
+                  { label: "Todas as Linhas", value: "all" },
+                  ...[...lines].sort((a,b)=>(a.nomelinha||'').localeCompare(b.nomelinha||'')).map(l => ({ label: l.nomelinha, value: l.id }))
+                ]}
+                value={filterLine}
+                onValueChange={setFilterLine}
+                placeholder="Todas"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Licenciador</Label>
-              <Select value={filterLicense} onValueChange={setFilterLicense}>
-                <SelectTrigger className="min-w-[150px] w-auto">
-                  <SelectValue placeholder="Todos">
-                    {filterLicense === 'all' ? 'Todos os Licenciadores' : (licenses.find(l => l.id === filterLicense)?.nomelicenciador)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Licenciadores</SelectItem>
-                  {[...licenses].sort((a, b) => (a.nomelicenciador || '').localeCompare(b.nomelicenciador || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="h-8 text-xs min-w-[150px]"
+                options={[
+                  { label: "Todos os Licenciadores", value: "all" },
+                  ...[...licenses].sort((a,b)=>(a.nomelicenciador||'').localeCompare(b.nomelicenciador||'')).map(l => ({ label: l.nomelicenciador, value: l.id }))
+                ]}
+                value={filterLicense}
+                onValueChange={setFilterLicense}
+                placeholder="Todos"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Ano</Label>
-              <Select value={filterYear} onValueChange={setFilterYear}>
-                <SelectTrigger className="min-w-[100px] w-auto">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {uniqueYears.map(year => (
-                    <SelectItem key={String(year)} value={String(year)}>{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="h-8 text-xs min-w-[100px]"
+                options={[
+                  { label: "Todos", value: "all" },
+                  ...uniqueYears.map(y => ({ label: String(y), value: String(y) }))
+                ]}
+                value={filterYear}
+                onValueChange={setFilterYear}
+                placeholder="Todos"
+              />
             </div>
+            
+            {isAdmin && selectedProductIds.length > 1 && (
+              <div className="flex items-center gap-2 ml-4">
+                <BatchEditProductsDialog 
+                  selectedProductIds={selectedProductIds} 
+                  licenses={licenses} 
+                  lines={lines} 
+                  categories={categories} 
+                  onComplete={() => setSelectedProductIds([])} 
+                />
+                <BatchDeleteProductsDialog 
+                  selectedProductIds={selectedProductIds} 
+                  onComplete={() => setSelectedProductIds([])} 
+                />
+              </div>
+            )}
+
             <div className="flex-grow" />
             <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-500 whitespace-nowrap">Visualização:</span>
@@ -6867,9 +7942,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                               categories={categories} 
                               licenses={licenses} 
                             />
-                            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-red-600" onClick={() => handleDeleteProduct(product.id)}>
-                              <Trash2 size={16} />
-                            </Button>
+                            <DeleteProductDialog 
+                              productId={product.id} 
+                              productName={product.name} 
+                            />
                           </div>
                         </td>
                       )}

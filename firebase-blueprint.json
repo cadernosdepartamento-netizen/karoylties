@@ -107,6 +107,24 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Data de criação" }
       },
       "required": ["email", "role"]
+    },
+    "Sale": {
+      "title": "Venda",
+      "description": "Registro de venda de produto originado de banco externo.",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string", "description": "Código SKU do produto" },
+        "description": { "type": "string", "description": "Descrição do produto" },
+        "quantity": { "type": "number", "description": "Quantidade vendida" },
+        "unitPrice": { "type": "number", "description": "Valor unitário" },
+        "totalValue": { "type": "number", "description": "Valor total da venda" },
+        "date": { "type": "string", "format": "date-time", "description": "Data da venda" },
+        "licenseId": { "type": "string", "description": "ID do licenciador" },
+        "lineId": { "type": "string", "description": "ID da linha" },
+        "categoryId": { "type": "string", "description": "ID da categoria" },
+        "launchYear": { "type": "number", "description": "Ano de lançamento" }
+      },
+      "required": ["sku", "description", "quantity", "unitPrice", "totalValue"]
     }
   },
   "firestore": {
@@ -117,6 +135,7 @@
     "/reports": { "schema": "RoyaltyReport", "description": "Coleção de relatórios mensais" },
     "/payments": { "schema": "Payment", "description": "Coleção de pagamentos" },
     "/productCategories": { "schema": "ProductCategory", "description": "Coleção de categorias de produtos" },
-    "/users": { "schema": "User", "description": "Coleção de perfis de usuários" }
+    "/users": { "schema": "User", "description": "Coleção de perfis de usuários" },
+    "/sales": { "schema": "Sale", "description": "Coleção de vendas externas" }
   }
 }
