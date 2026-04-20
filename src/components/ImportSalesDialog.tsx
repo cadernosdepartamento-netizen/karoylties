@@ -233,6 +233,17 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
         if (collectionName === 'fobsales') {
           saleData.invoice = String(getVal(["invoice", "nf", "nota fiscal"]) || '').trim();
           saleData.fabricante = String(getVal(["fabricante", "manufacturer"]) || '').trim();
+          const dollarRate = parseNum(getVal(["taxa dolar", "taxa de dolar", "dollar rate"])) || 1;
+          saleData.dollarRate = dollarRate;
+          
+          // Recalculate values in BRL
+          saleData.unitPriceBRL = saleData.unitPrice * dollarRate;
+          saleData.totalValueBRL = saleData.totalValue * dollarRate;
+          saleData.icmsBRL = saleData.icms * dollarRate;
+          saleData.pisBRL = saleData.pis * dollarRate;
+          saleData.cofinsBRL = saleData.cofins * dollarRate;
+          saleData.ipiBRL = saleData.ipi * dollarRate;
+          saleData.netValueBRL = saleData.netValue * dollarRate;
         }
 
         batchList.push(saleData);
@@ -299,11 +310,12 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
         "EAN",
         "Data",
         "Invoice",
-        "Fabricante"
+        "Fabricante",
+        "Taxa Dolar"
       ];
       
       const sampleData = [
-        ["SKU-EXEMPLO", "Produto Exemplo", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01", "INV123", "FAB001"]
+        ["SKU-EXEMPLO", "Produto Exemplo", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01", "INV123", "FAB001", 5.50]
       ];
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
