@@ -206,7 +206,7 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           return parseFloat(cleanVal) || 0;
         };
 
-        const saleData = {
+        const saleData: any = {
           sku,
           description,
           quantity: parseNum(getVal(["quantidade", "qtd", "quantidade vendida", "qtde", "quant", "qtd vendida", "qtd. vendida"])),
@@ -229,6 +229,11 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
 
           createdAt: serverTimestamp()
         };
+
+        if (collectionName === 'fobsales') {
+          saleData.invoice = String(getVal(["invoice", "nf", "nota fiscal"]) || '').trim();
+          saleData.fabricante = String(getVal(["fabricante", "manufacturer"]) || '').trim();
+        }
 
         batchList.push(saleData);
       });
@@ -292,11 +297,13 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
         "IPI",
         "Valor liquido",
         "EAN",
-        "Data"
+        "Data",
+        "Invoice",
+        "Fabricante"
       ];
       
       const sampleData = [
-        ["SKU-EXEMPLO", "Produto Exemplo", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01"]
+        ["SKU-EXEMPLO", "Produto Exemplo", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01", "INV123", "FAB001"]
       ];
 
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);

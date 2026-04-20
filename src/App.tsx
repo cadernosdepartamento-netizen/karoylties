@@ -6721,6 +6721,12 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                   <th className="px-4 py-3 text-right">Valor Total</th>
                   <th className="px-4 py-3 text-right">Total Impostos</th>
                   <th className="px-4 py-3 text-right">Total Líquido</th>
+                  {activeTab === 'sales_fob' && (
+                    <>
+                      <th className="px-4 py-3">Invoice</th>
+                      <th className="px-4 py-3">Fabricante</th>
+                    </>
+                  )}
                   {viewMode === 'grouped' && <th className="px-4 py-3 text-center">Registros</th>}
                 </tr>
               </thead>
@@ -6752,9 +6758,9 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600">{group.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={group.description}>{group.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.quantity.toLocaleString('pt-BR')}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalTaxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">{group.netValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalTaxes.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">{group.netValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}</td>
                       <td className="px-4 py-3 text-slate-400 text-[11px] text-center">{group.count} lin.</td>
                     </tr>
                   ))
@@ -6800,17 +6806,23 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
-                        {sale.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {sale.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
-                        {sale.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {sale.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
-                        {totalImpostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {totalImpostos.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">
-                        {totalLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {totalLiquido.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' ? 'USD' : 'BRL' })}
                       </td>
+                      {activeTab === 'sales_fob' && (
+                        <>
+                          <td className="px-4 py-3 text-sm text-slate-600">{sale.invoice || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{sale.fabricante || '-'}</td>
+                        </>
+                      )}
                     </tr>
                   )})
                 )}
