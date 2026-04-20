@@ -745,7 +745,7 @@ function MainApp() {
               {activeTab === 'reports' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportReportsDialog contracts={contracts} lines={lines} products={products} licenses={licenses} />
-                  <AddReportDialog contracts={contracts} lines={lines} products={products} licenses={licenses} sales={sales} />
+                  <AddReportDialog contracts={contracts} lines={lines} products={products} licenses={licenses} sales={sales} netSales={netSales} wholeSales={wholeSales} fobSales={fobSales} />
                 </div>
               )}
               {activeTab === 'payments' && isAdmin && (
@@ -4482,7 +4482,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
   );
 }
 
-function AddReportDialog({ contracts, lines, products, licenses, sales }: { contracts: Contract[], lines: Line[], products: Product[], licenses: License[], sales: Sale[] }) {
+function AddReportDialog({ contracts, lines, products, licenses, sales, netSales, wholeSales, fobSales }: { contracts: Contract[], lines: Line[], products: Product[], licenses: License[], sales: Sale[], netSales: Sale[], wholeSales: Sale[], fobSales: Sale[] }) {
   const [open, setOpen] = useState(false);
   const [licenseId, setLicenseId] = useState('');
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
@@ -4555,9 +4555,17 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
     setIsCompiling(true);
 
     try {
+      const royaltyRateTypeMap: Record<string, Sale[]> = {
+        'netSales1': netSales,
+        'netPurchases': wholeSales,
+        'fob': fobSales
+      };
+      
+      const salesData = royaltyRateTypeMap[royaltyRateType] || sales;
+
       const trimmedSelectedSkus = selectedProductSkus.map(sk => String(sk).trim());
 
-      const matchingSales = sales.filter(s => {
+      const matchingSales = salesData.filter(s => {
         const saleSku = String(s.sku || "").trim();
         if (!trimmedSelectedSkus.includes(saleSku)) return false;
         const dt = getSafeDate(s.date);
