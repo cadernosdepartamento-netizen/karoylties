@@ -5696,10 +5696,12 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
   }, [sortConfig]);
 
   const SortIcon = ({ column }: { column: string }) => {
-    if (sortConfig.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
-    if (sortConfig.direction === 'asc') return <ChevronUp size={12} className="ml-1 text-blue-600" />;
-    if (sortConfig.direction === 'desc') return <ChevronDown size={12} className="ml-1 text-blue-600" />;
-    return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
+    return (
+      <div className="flex flex-col ml-1">
+        <ChevronUp size={10} className={sortConfig.key === column && sortConfig.direction === 'asc' ? 'text-blue-600' : 'text-slate-300'} />
+        <ChevronDown size={10} className={sortConfig.key === column && sortConfig.direction === 'desc' ? 'text-blue-600' : 'text-slate-300'} />
+      </div>
+    );
   };
 
   return (
@@ -6325,23 +6327,72 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     );
 
                     return (
-                      <tr key={year} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-3 py-2 font-bold bg-slate-50/30 border-r border-slate-200 text-center">
-                          {year}
-                        </td>
-                        {rowValues.map((v, i) => (
-                          <td key={i} className={`px-3 py-2 text-right border-r border-slate-200 ${v > 0 ? 'text-slate-900 font-medium' : 'text-slate-300'}`}>
-                            {salesSummaryValueType === 'quantity' ? 
-                              v.toLocaleString('pt-BR') : 
-                              v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <React.Fragment key={year}>
+                        <tr className="hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => {
+                          setExpandedSalesYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
+                        }}>
+                          <td className="px-3 py-2 font-bold bg-slate-50/30 border-r border-slate-200 text-center flex items-center gap-2">
+                             <span className="text-slate-400">
+                                {expandedSalesYears.includes(year) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                             </span>
+                             {year}
                           </td>
-                        ))}
-                        <td className="px-3 py-2 text-right font-bold bg-emerald-50/30 text-emerald-700">
-                          {salesSummaryValueType === 'quantity' ? 
-                            yearTotal.toLocaleString('pt-BR') : 
-                            yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
+                          {rowValues.map((v, i) => (
+                            <td key={i} className={`px-3 py-2 text-right border-r border-slate-200 ${v > 0 ? 'text-slate-900 font-medium' : 'text-slate-300'}`}>
+                              {salesSummaryValueType === 'quantity' ? 
+                                v.toLocaleString('pt-BR') : 
+                                v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 text-right font-bold bg-emerald-50/30 text-emerald-700">
+                            {salesSummaryValueType === 'quantity' ? 
+                              yearTotal.toLocaleString('pt-BR') : 
+                              yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                        {expandedSalesYears.includes(year) && (
+                          <tr className="bg-slate-50/80 animate-in fade-in slide-in-from-top-1 border-b border-slate-100">
+                            <td className="px-3 py-1.5 text-[10px] italic text-slate-500 border-r border-slate-200 bg-slate-100/30 text-center">
+                              % Cresc./Decr.
+                            </td>
+                            {rowValues.map((v, i) => {
+                              let comparisonVal = 0;
+                              const prevYear = year - 1;
+                              if (salesSummaryData.years.includes(prevYear)) {
+                                if (salesSummaryViewMode === 'monthly') {
+                                  comparisonVal = salesSummaryData.grid[prevYear]?.[i + 1] || 0;
+                                } else {
+                                  const q = i + 1;
+                                  const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                                  comparisonVal = qMonths.reduce((acc, m) => acc + (salesSummaryData.grid[prevYear]?.[m] || 0), 0);
+                                }
+                              }
+                              const variance = comparisonVal > 0 ? ((v - comparisonVal) / comparisonVal) * 100 : 0;
+                              const isPositive = variance > 0;
+                              const isZero = variance === 0 && v === comparisonVal;
+                              if (comparisonVal === 0) return (
+                                <td key={i} className="px-1 py-1.5 text-center border-r border-slate-200 text-slate-400 text-[10px]">-</td>
+                              );
+                              return (
+                                <td key={i} className={`px-1 py-1.5 text-center border-r border-slate-200 text-[10px] font-medium ${isPositive ? 'text-emerald-600' : isZero ? 'text-slate-400' : 'text-rose-600'}`}>
+                                  {isPositive ? '+' : ''}{variance.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                                </td>
+                              );
+                            })}
+                            <td className="px-3 py-1.5 text-right bg-emerald-50/50 text-[10px] font-bold text-slate-600">
+                              {(() => {
+                                let prevYearTotal = 0;
+                                salesSummaryData.months.forEach(m => {
+                                  prevYearTotal += salesSummaryData.grid[year - 1]?.[m] || 0;
+                                });
+                                if (prevYearTotal === 0) return '-';
+                                const totalVar = ((yearTotal - prevYearTotal) / prevYearTotal) * 100;
+                                return `${totalVar > 0 ? '+' : ''}${totalVar.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+                              })()}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -6567,12 +6618,12 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     </tr>
                   ))
                 ) : (
-                  filteredSales.slice(0, pageSize).map((sale) => {
+                  filteredSales.slice(0, pageSize).map((sale, idx) => {
                     const totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
                     const totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
                     
                     return (
-                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={`${sale.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{formatDateBR(sale.date)}</td>
                       <td className="px-4 py-2 text-center">
                         {(() => {
@@ -6720,6 +6771,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   const [summaryValueType, setSummaryValueType] = useState<string>('royaltyValue');
   const [summaryViewMode, setSummaryViewMode] = useState<string>('monthly');
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
+  const [expandedSalesYears, setExpandedSalesYears] = useState<number[]>([]);
 
   const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines, allCurrencies } = React.useMemo(() => {
     const yearsSet = new Set<number>();
@@ -8277,17 +8329,18 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
     return 0;
   }), [payments, sortConfig, contracts, licenses]);
 
-  const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
+const SortableHeader = ({ label, sortKey, sortConfig, requestSort }: { label: string, sortKey: string, sortConfig: any, requestSort: any }) => (
     <th 
       className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
       onClick={() => requestSort(sortKey)}
     >
       <div className="flex items-center gap-1">
         {label}
-        <ArrowUpDown size={12} className={`
-          ${sortConfig?.key === sortKey ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-500'} 
-          transition-colors
-        `} />
+        {sortConfig?.key === sortKey ? (
+            sortConfig.direction === 'asc' ? <ChevronUp size={14} className="text-blue-600" /> : <ChevronDown size={14} className="text-blue-600"/>
+        ) : (
+            <ChevronUp size={14} className="text-slate-300" />
+        )}
       </div>
     </th>
   );
@@ -8625,8 +8678,8 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredObligations.map((ob: any) => (
-                  <tr key={ob.id} className="hover:bg-slate-50 transition-colors">
+                {filteredObligations.map((ob: any, idx: number) => (
+                  <tr key={`${ob.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">{ob.type}</td>
@@ -8687,27 +8740,27 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
           <table className="w-full text-sm text-left min-w-[1200px]">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <SortableHeader label="Tipo" sortKey="type" />
-                <SortableHeader label="Licenciador" sortKey="license" />
-                <SortableHeader label="Contrato" sortKey="contract" />
-                <SortableHeader label="Identificação" sortKey="identification" />
-                <SortableHeader label="Dt Vencimento" sortKey="dueDate" />
-                <SortableHeader label="Dt Pagamento" sortKey="date" />
-                <SortableHeader label="Valor" sortKey="amount" />
-                <SortableHeader label="Invoice / NF" sortKey="invoice" />
-                <SortableHeader label="Status" sortKey="status" />
+                <SortableHeader label="Tipo" sortKey="type" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Licenciador" sortKey="license" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Contrato" sortKey="contract" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Identificação" sortKey="identification" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Dt Vencimento" sortKey="dueDate" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Dt Pagamento" sortKey="date" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Valor" sortKey="amount" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Invoice / NF" sortKey="invoice" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Status" sortKey="status" sortConfig={sortConfig} requestSort={requestSort} />
                 <th className="px-4 py-3 text-center">Doc</th>
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {sortedPayments.map((payment: any) => {
+              {sortedPayments.map((payment: any, idx: number) => {
                 const contract = contracts.find((c: any) => c.id === payment.contractId);
                 const license = licenses.find((l: any) => l.id === (payment.licenseId || contract?.licenseId));
                 const symbol = getCurrencySymbol(payment.currency || contract?.currency || 'BRL');
                 
                 return (
-                    <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={`${payment.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">
                         {payment.type === 'mg' ? 'MG' : 
                          payment.type === 'excess' ? 'Royalties' : 
