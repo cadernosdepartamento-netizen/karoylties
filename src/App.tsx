@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Component, ReactNode } from 'react';
+import React, { useState, useEffect, Component, ReactNode, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { auth, db, storage, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType, uploadFile } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -23,7 +24,6 @@ import {
   Calendar,
   X,
   Building2,
-  Filter,
   PackageSearch,
   Database,
   Eye,
@@ -192,15 +192,30 @@ interface RoyaltyReport {
   royaltyRate?: number;
   royaltyValue: number;
   productName?: string;
+  calculationType?: string;
 }
 interface Payment {
   id: string;
   contractId: string;
-  type: 'mg' | 'excess';
-  installmentNumber?: number;
+  licenseId?: string;
+  type: 'mg' | 'excess' | 'marketing' | 'other';
+  responsible?: string;
+  receiptDate?: string;
+  paymentRequestDate?: string;
+  identification?: string;
+  dueDate?: string;
   amount: number;
+  currency?: string;
   date: string;
+  paymentOrder?: string;
+  invoice?: string;
+  notes?: string;
+  year?: string;
+  installmentNumber?: number | string;
   status: 'pending' | 'paid';
+  createdAt?: any;
+  documentUrl?: string;
+  documentName?: string;
 }
 
 interface Sale {
@@ -243,6 +258,55 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Component
+function PortalTooltip({ 
+  content, 
+  children 
+}: { 
+  content: ReactNode, 
+  children: ReactNode 
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  const handleMouseEnter = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top - 8,
+        left: rect.left + rect.width / 2
+      });
+      setIsOpen(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsOpen(false);
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className="inline-block relative"
+    >
+      {children}
+      {isOpen && createPortal(
+        <div 
+          className="fixed z-[9999] pointer-events-none w-auto min-w-[400px] bg-white border border-slate-200 shadow-xl rounded-lg overflow-hidden whitespace-nowrap -translate-x-1/2 -translate-y-full"
+          style={{ top: coords.top, left: coords.left }}
+        >
+          {content}
+          {/* Seta do tooltip */}
+          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-slate-200 rotate-45"></div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 class ErrorBoundary extends Component<any, any> {
   state: any;
   props: any;
@@ -320,6 +384,64 @@ function MainApp() {
   const [reports, setReports] = useState<RoyaltyReport[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+
+  // Sales Action States
+  const [isDeletingSales, setIsDeletingSales] = useState(false);
+  const [deleteSalesProgress, setDeleteSalesProgress] = useState(0);
+  const [showConfirmDeleteSales, setShowConfirmDeleteSales] = useState(false);
+
+  const handleClearAllSales = async () => {
+    setShowConfirmDeleteSales(false);
+    setIsDeletingSales(true);
+    setDeleteSalesProgress(0);
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    try {
+      const totalSales = sales.length;
+      if (totalSales === 0) {
+        setIsDeletingSales(false);
+        return;
+      }
+
+      const batchSize = 500;
+      const batches = [];
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const sale of sales) {
+        if (!sale.id) continue;
+        currentBatch.delete(doc(db, 'sales', sale.id));
+        opCount++;
+
+        if (opCount === batchSize) {
+          batches.push(currentBatch);
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        batches.push(currentBatch);
+      }
+
+      let committedCount = 0;
+      for (let i = 0; i < batches.length; i++) {
+        await batches[i].commit();
+        committedCount += (i === batches.length - 1 && opCount > 0) ? opCount : batchSize;
+        const progress = Math.min(Math.round((committedCount / totalSales) * 100), 100);
+        setDeleteSalesProgress(progress);
+      }
+
+      toast.success(`${totalSales} vendas foram apagadas da base.`);
+    } catch (error) {
+      console.error("Erro ao apagar vendas:", error);
+      toast.error("Houve um erro ao apagar as vendas da base de dados.");
+    } finally {
+      setIsDeletingSales(false);
+      setDeleteSalesProgress(0);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -527,6 +649,48 @@ function MainApp() {
                   className="pl-10 w-64 bg-slate-50 border-slate-200 focus:bg-white transition-all"
                 />
               </div>
+
+              {activeTab === 'sales' && (
+                <div className="flex items-center gap-2">
+                  {isAdmin && sales.length > 0 && (
+                    <Dialog open={showConfirmDeleteSales} onOpenChange={setShowConfirmDeleteSales}>
+                      <DialogTrigger 
+                        className={cn(buttonVariants({ variant: "destructive" }), "gap-2 h-9 px-3")}
+                        disabled={isDeletingSales}
+                      >
+                        {isDeletingSales ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            {deleteSalesProgress}%
+                          </>
+                        ) : (
+                          <>
+                            <LogOut size={16} className="rotate-90" /> 
+                            Apagar Base
+                          </>
+                        )}
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle className="text-red-600 flex items-center gap-2">
+                            <AlertCircle className="h-5 w-5" />
+                            Confirmar Exclusão Total
+                          </DialogTitle>
+                        </DialogHeader>
+                        <div className="py-4 space-y-2 text-slate-600">
+                          <p className="font-semibold text-slate-900">Esta ação é irreversível.</p>
+                          <p>Você tem certeza que deseja apagar absolutamente <span className="font-bold underline">todas as {sales.length} vendas</span> da base de dados?</p>
+                        </div>
+                        <DialogFooter className="gap-2 sm:gap-0">
+                          <Button variant="outline" onClick={() => setShowConfirmDeleteSales(false)}>Cancelar</Button>
+                          <Button variant="destructive" onClick={handleClearAllSales}>Sim, Apagar Tudo</Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                  <ImportSalesDialog products={products} />
+                </div>
+              )}
               
               {activeTab === 'contracts' && isAdmin && (
                 <div className="flex items-center gap-2">
@@ -575,13 +739,13 @@ function MainApp() {
                 products={products}
               />
             )}
-            {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} isAdmin={isAdmin} />}
+            {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} payments={payments} isAdmin={isAdmin} />}
             {activeTab === 'licenses' && <LicensorsView licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'lines' && <LinesView lines={lines} licenses={licenses} contracts={contracts} products={products} categories={productCategories} isAdmin={isAdmin} />}
             {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} isAdmin={isAdmin} />}
-            {activeTab === 'sales' && <SalesView sales={sales} licenses={licenses} lines={lines} categories={productCategories} products={products} isAdmin={isAdmin} />}
+            {activeTab === 'sales' && <SalesView sales={sales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
             {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
-            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} isAdmin={isAdmin} />}
+            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} lines={lines} reports={reports} isAdmin={isAdmin} />}
             {activeTab === 'settings' && <SettingsView currentUser={user} isAdmin={isAdmin} />}
           </div>
         </main>
@@ -618,11 +782,35 @@ const parseCurrencyBR = (value: string) => {
 
 const formatDateBR = (dateStr: string | undefined | null) => {
   if (!dateStr) return '-';
-  // If it's already a date-like string but not a full ISO string, try to handle it
-  // For strings like "Assinatura", new Date() returns Invalid Date
+  
+  // If the date is already formatted correctly as DD/MM/YYYY, return verbatim
+  // to avoid JS treating it as MM/DD/YYYY and swapping the month and day.
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    return dateStr;
+  }
+
+  // Force strict parsing for YYYY-MM-DD formats to avoid any timezone shifting
+  // and force DD/MM/YYYY formatting consistently.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  }
+
+  // Handle full ISO date strings by extracting only the date portion
+  if (dateStr.includes('T') && /^\d{4}-\d{2}-\d{2}T/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('T')[0].split('-');
+    return `${day}/${month}/${year}`;
+  }
+
+  // Fallback for other formats
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
-  return date.toLocaleDateString('pt-BR');
+  
+  // Fallback using manual construction in local timezone
+  const d = date.getDate().toString().padStart(2, '0');
+  const m = (date.getMonth() + 1).toString().padStart(2, '0');
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
 };
 
 const calculateDuration = (startStr: string, endStr: string) => {
@@ -3994,7 +4182,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
               <div className="p-4 border rounded-lg space-y-4 bg-indigo-50/30 border-indigo-100">
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="hasMarketingFund" checked={hasMarketingFund} onChange={(e) => setHasMarketingFund(e.target.checked)} />
-                  <Label htmlFor="hasMarketingFund" className="font-bold text-indigo-900">Fundo de Marketing?</Label>
+                  <Label htmlFor="hasMarketingFund" className="font-bold text-indigo-900">Fundo de Marketing (CMF)?</Label>
                 </div>
                 {hasMarketingFund && (
                   <div className="space-y-6 pl-6">
@@ -4018,13 +4206,13 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                           onChange={(e) => setHasMarketingFundInstallments(e.target.checked)}
                           className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        <Label htmlFor="hasMarketingFundInstallments" className="text-sm font-medium text-indigo-900">O fundo de marketing terá parcelas de adiantamento?</Label>
+                        <Label htmlFor="hasMarketingFundInstallments" className="text-sm font-medium text-indigo-900">O fundo de marketing (CMF) terá parcelas de adiantamento?</Label>
                       </div>
 
                       {hasMarketingFundInstallments && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
                           <div className="space-y-2">
-                            <Label className="text-xs">Quantas parcelas de Fundo de Marketing?</Label>
+                            <Label className="text-xs">Quantas parcelas de Fundo de Marketing (CMF)?</Label>
                             <Input type="number" min="1" value={numMarketingFundInstallments} onChange={(e) => setNumMarketingFundInstallments(e.target.value)} className="h-8 w-24" />
                           </div>
                           <div className="grid grid-cols-1 gap-3">
@@ -4360,6 +4548,9 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
           netValue: g.netValue,
           royaltyRate,
           royaltyValue,
+          calculationType: royaltyRateType === 'netSales1' ? 'Vendas' : 
+                          royaltyRateType === 'netPurchases' ? 'Compras' : 
+                          royaltyRateType === 'fob' ? 'FOB' : '',
           createdAt: serverTimestamp()
         });
         opCount++;
@@ -4401,14 +4592,18 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
 
   const availableLines = lines.filter(l => l.licenseId === licenseId);
   const availableContracts = contracts.filter(c => c.licenseId === licenseId);
+  
+  // Melhora a filtragem: produtos que pertencem às linhas do licenciador selecionado
+  const availableLineIds = new Set(availableLines.map(l => l.id));
+
   const availableLaunchYears = Array.from(new Set(products
-      .filter(p => p.licenseId === licenseId && (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)))
+      .filter(p => availableLineIds.has(p.lineId) && (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)))
       .map(p => p.launchYear)
       .filter((y): y is number => !!y)
   )).sort((a,b) => b - a);
 
   const availableProducts = products.filter(p => 
-    p.licenseId === licenseId && 
+    availableLineIds.has(p.lineId) && 
     (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)) && 
     (selectedLaunchYears.length === 0 || selectedLaunchYears.includes(String(p.launchYear))) &&
     !!p.sku
@@ -4425,11 +4620,11 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
           </button>
         }
       />
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Gerar Novo Relatório de Royalties</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+      <DialogContent className="max-w-xl p-6 overflow-y-auto max-h-[95vh]">
+          <DialogHeader>
+            <DialogTitle>Gerar Novo Relatório de Royalties</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-2">
             <Label>Licenciador</Label>
             <Select onValueChange={(v) => { 
@@ -4442,7 +4637,11 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
               }} 
               value={licenseId}
             >
-              <SelectTrigger><SelectValue placeholder="Selecione o licenciador" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o licenciador">
+                  {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 {[...licenses].sort((a,b) => a.nomelicenciador.localeCompare(b.nomelicenciador)).map(l => (
                   <SelectItem key={l.id} value={l.id}>{l.nomelicenciador}</SelectItem>
@@ -4470,29 +4669,46 @@ function AddReportDialog({ contracts, lines, products, licenses, sales }: { cont
           )}
 
           {contractId && selectedContract && (
-            <div className="space-y-2">
-              <Label>Taxa de Royalties (do Contrato)</Label>
-              <Select onValueChange={setRoyaltyRateType} value={royaltyRateType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a taxa a aplicar">
-                    {royaltyRateType === 'netSales1' && typeof selectedContract.royaltyRateNetSales1 === 'number' && `${(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
-                    {royaltyRateType === 'netPurchases' && typeof selectedContract.royaltyRateNetPurchases === 'number' && `${(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
-                    {royaltyRateType === 'fob' && typeof selectedContract.royaltyRateFOB === 'number' && `${(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {typeof selectedContract.royaltyRateNetSales1 === 'number' && (
-                    <SelectItem value="netSales1">{(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Vendas)</SelectItem>
-                  )}
-                  {typeof selectedContract.royaltyRateNetPurchases === 'number' && (
-                    <SelectItem value="netPurchases">{(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Compras)</SelectItem>
-                  )}
-                  {typeof selectedContract.royaltyRateFOB === 'number' && (
-                    <SelectItem value="fob">{(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa FOB)</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label>Taxa de Royalties (do Contrato)</Label>
+                <Select onValueChange={setRoyaltyRateType} value={royaltyRateType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a taxa a aplicar">
+                      {royaltyRateType === 'netSales1' && typeof selectedContract.royaltyRateNetSales1 === 'number' && `${(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                      {royaltyRateType === 'netPurchases' && typeof selectedContract.royaltyRateNetPurchases === 'number' && `${(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                      {royaltyRateType === 'fob' && typeof selectedContract.royaltyRateFOB === 'number' && `${(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeof selectedContract.royaltyRateNetSales1 === 'number' && (
+                      <SelectItem value="netSales1">{(selectedContract.royaltyRateNetSales1 * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Vendas)</SelectItem>
+                    )}
+                    {typeof selectedContract.royaltyRateNetPurchases === 'number' && (
+                      <SelectItem value="netPurchases">{(selectedContract.royaltyRateNetPurchases * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa sobre Compras)</SelectItem>
+                    )}
+                    {typeof selectedContract.royaltyRateFOB === 'number' && (
+                      <SelectItem value="fob">{(selectedContract.royaltyRateFOB * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% (Taxa FOB)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {royaltyRateType && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                  <Label>Tipo de Cálculo</Label>
+                  <Input 
+                    value={
+                      royaltyRateType === 'netSales1' ? 'Vendas Líquidas' : 
+                      royaltyRateType === 'netPurchases' ? 'Compras Líquidas' : 
+                      royaltyRateType === 'fob' ? 'FOB' : ''
+                    } 
+                    className="bg-slate-50 font-medium text-blue-700" 
+                    readOnly 
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {licenseId && (
@@ -4573,13 +4789,56 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   const [year, setYear] = useState('');
   const [installmentNumber, setInstallmentNumber] = useState('');
   const [status, setStatus] = useState<'pending' | 'paid'>('paid');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const filteredContracts = contracts.filter(c => !licenseId || c.licenseId === licenseId);
   const selectedContract = contracts.find(c => c.id === contractId);
 
+  const availableYears = React.useMemo(() => {
+    if (!selectedContract) return [];
+    const yearsSet = new Set<string>();
+    
+    if (type === 'mg' && selectedContract.mgInstallments) {
+      selectedContract.mgInstallments.forEach(i => i.year && yearsSet.add(String(i.year)));
+    } else if (type === 'marketing' && selectedContract.marketingFundInstallments) {
+      selectedContract.marketingFundInstallments.forEach(i => i.year && yearsSet.add(String(i.year)));
+    } else if (selectedContract.isDividedIntoYears && selectedContract.years) {
+      selectedContract.years.forEach(y => yearsSet.add(String(y.yearNumber)));
+    }
+    
+    return Array.from(yearsSet).sort();
+  }, [selectedContract, type]);
+
+  const availableInstallments = React.useMemo(() => {
+    if (!selectedContract) return [];
+    const instSet = new Set<string>();
+
+    if (type === 'mg' && selectedContract.mgInstallments) {
+      selectedContract.mgInstallments.forEach(i => {
+        if (!year || String(i.year) === year) instSet.add(String(i.installmentNumber));
+      });
+    } else if (type === 'marketing' && selectedContract.marketingFundInstallments) {
+      selectedContract.marketingFundInstallments.forEach(i => {
+        if (!year || String(i.year) === year) instSet.add(String(i.installmentNumber));
+      });
+    }
+    
+    return Array.from(instSet).sort();
+  }, [selectedContract, type, year]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUploading(true);
     try {
+      let documentUrl = '';
+      let documentName = '';
+
+      if (file) {
+        documentUrl = await uploadFile(file, `payments/${Date.now()}_${file.name}`);
+        documentName = file.name;
+      }
+
       await addDoc(collection(db, 'payments'), {
         responsible,
         receiptDate,
@@ -4598,6 +4857,8 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
         year,
         installmentNumber: installmentNumber,
         status,
+        documentUrl,
+        documentName,
         createdAt: serverTimestamp()
       });
       toast.success('Pagamento registrado!');
@@ -4620,8 +4881,11 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
       setYear('');
       setInstallmentNumber('');
       setStatus('paid');
+      setFile(null);
     } catch (err) {
       toast.error('Erro ao registrar pagamento.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -4663,7 +4927,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
                 <SelectContent>
                   <SelectItem value="mg">Mínimo Garantido</SelectItem>
                   <SelectItem value="excess">Royalties Excedentes</SelectItem>
-                  <SelectItem value="marketing">Fundo de Marketing</SelectItem>
+                  <SelectItem value="marketing">Fundo de Marketing (CMF)</SelectItem>
                   <SelectItem value="other">Outros</SelectItem>
                 </SelectContent>
               </Select>
@@ -4689,11 +4953,23 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
             <div className="space-y-2">
               <Label>Contrato</Label>
               <Select onValueChange={setContractId} value={contractId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o contrato">
+                    {(() => {
+                      const c = contracts.find(c => c.id === contractId);
+                      if (!c) return null;
+                      return c.contractNumber || `ID: ${c.id.slice(0,5)}`;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
-                  ))}
+                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => {
+                    return (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.contractNumber || `ID: ${c.id.slice(0,5)}`}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -4748,11 +5024,33 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Ano</Label>
-              <Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="Ex: 2025" />
+              {availableYears.length > 0 ? (
+                <Select onValueChange={setYear} value={year}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o ano" /></SelectTrigger>
+                  <SelectContent>
+                    {availableYears.map(y => (
+                      <SelectItem key={y} value={y}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="Ex: 2025" />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Parcela</Label>
-              <Input value={installmentNumber} onChange={(e) => setInstallmentNumber(e.target.value)} placeholder="Ex: 1" />
+              {type !== 'excess' && availableInstallments.length > 0 ? (
+                <Select onValueChange={setInstallmentNumber} value={installmentNumber}>
+                  <SelectTrigger><SelectValue placeholder="Selecione a parcela" /></SelectTrigger>
+                  <SelectContent>
+                    {availableInstallments.map(i => (
+                      <SelectItem key={i} value={i}>{i}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={installmentNumber} onChange={(e) => setInstallmentNumber(e.target.value)} placeholder="Ex: 1" disabled={type === 'excess'} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
@@ -4767,6 +5065,29 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
           </div>
 
           <div className="space-y-2">
+            <Label>Comprovante / Documento (Invoice, Recibo, Boleto)</Label>
+            <div className="flex items-center gap-2">
+              <Input 
+                type="file" 
+                onChange={(e) => setFile(e.target.files?.[0] || null)} 
+                className="cursor-pointer"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              />
+              {file && (
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setFile(null)}
+                  className="text-red-500 hover:text-red-600"
+                >
+                  <X size={16} />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
             <Label>Observações</Label>
             <textarea 
               className="w-full min-h-[80px] p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
@@ -4776,7 +5097,20 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
             />
           </div>
 
-          <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700">Registrar Pagamento</Button>
+          <Button 
+            type="submit" 
+            className="w-full bg-blue-600 hover:bg-blue-700"
+            disabled={uploading}
+          >
+            {uploading ? (
+              <>
+                <Loader2 size={16} className="mr-2 animate-spin" />
+                Registrando...
+              </>
+            ) : (
+              'Registrar Pagamento'
+            )}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -5086,7 +5420,13 @@ function ContractCard({
   // Compensação progress (Royalties vs MG)
   const mgValue = Number(contract.totalRoyalties) || 0;
   const mgTotal = Number(contract.minimumGuarantee) || 1;
-  const mgProgress = Math.min((mgValue / mgTotal) * 100, 100);
+  const recoupmentPercent = (mgValue / mgTotal) * 100;
+  const clampedRecoupment = Math.min(recoupmentPercent, 100);
+  const isMGMet = mgValue >= mgTotal;
+  const isExceeded = mgValue > mgTotal;
+  
+  const mgBarColor = isMGMet ? 'bg-emerald-500' : 'bg-orange-500';
+  const mgBgColor = isExceeded ? 'bg-emerald-100' : 'bg-slate-100';
 
   const durationStr = calculateDuration(contract.startDate, contract.endDate);
 
@@ -5156,7 +5496,7 @@ function ContractCard({
         <div className="border-t border-slate-100 pt-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-[13px] text-slate-500 font-normal">Compensação</h3>
-            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-4 py-1.5 rounded-lg text-sm font-semibold uppercase tracking-wider">
+            <Badge variant="secondary" className="bg-slate-100 text-slate-700 border-none px-2 py-0.5 rounded-md text-[11px] font-medium tracking-normal">
                {contract.currency === 'Dólar' ? 'USD' : 
                 contract.currency === 'Real' ? 'BRL' : 
                 contract.currency === 'Euro' ? 'EUR' : 
@@ -5166,22 +5506,31 @@ function ContractCard({
 
           <div className="grid grid-cols-2 mb-2">
             <div className="space-y-0.5">
-              <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">MG</div>
-              <div className="text-lg font-semibold text-slate-700 leading-none">
-                 {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
-            <div className="space-y-0.5 text-right">
               <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Royalties</div>
               <div className="text-lg font-semibold text-slate-700 leading-none">
                  {getCurrencySymbol(contract.currency || 'BRL')} {contract.totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
+            <div className="space-y-0.5 text-right">
+              <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">MG</div>
+              <div className="text-lg font-semibold text-slate-700 leading-none">
+                 {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-4">
-            <div className={cn("h-full rounded-full transition-all duration-500", progressBgClass)} style={{ width: `${mgProgress}%` }} />
+          {/* Progress Bar with Recoupment Logic */}
+          <div className={cn("h-1.5 w-full rounded-full overflow-hidden mb-4", mgBgColor)}>
+            <div className={cn("h-full rounded-full transition-all duration-500", mgBarColor)} style={{ width: `${clampedRecoupment}%` }} />
+          </div>
+
+          <div className="flex justify-between items-center text-[10px] text-slate-400 mb-4 px-1">
+             <span className={isMGMet ? "text-emerald-600 font-bold" : "text-orange-600 font-medium"}>
+               {recoupmentPercent.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% compensado
+             </span>
+             <span className="text-emerald-600 font-medium">
+                {contract.totalMGPaid ? contract.totalMGPaid.toLocaleString('pt-BR', { style: 'currency', currency: contract.currency === 'Dólar' ? 'USD' : contract.currency === 'Euro' ? 'EUR' : 'BRL' }) : getCurrencySymbol(contract.currency || 'BRL') + ' 0,00'} pago
+             </span>
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-3">
@@ -5243,12 +5592,13 @@ function ContractCard({
   );
 }
 
-function ContractsView({ contracts, licenses, reports, lines, products, isAdmin }: { 
+function ContractsView({ contracts, licenses, reports, lines, products, payments = [], isAdmin }: { 
   contracts: Contract[], 
   licenses: License[], 
   reports: RoyaltyReport[], 
   lines: Line[], 
   products: Product[],
+  payments?: any[],
   isAdmin: boolean
 }) {
   const [statusFilter, setStatusFilter] = useState('Todos');
@@ -5262,15 +5612,21 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
     const balance = (contract.minimumGuarantee || 0) - totalRoyalties;
     const license = licenses.find((l: any) => l.id === contract.licenseId);
     
+    // Calculate total MG Paid for this contract
+    const mgPaid = payments
+      .filter((p: any) => p.contractId === contract.id && p.type === 'mg' && p.status === 'paid')
+      .reduce((sum: number, p: any) => sum + p.amount, 0);
+    
     return { 
       ...contract, 
       calculatedStatus: statusInfo.label, 
       statusColor: statusInfo.color,
       licenseName: license?.nomelicenciador || (contract.licenseId ? `ID: ${contract.licenseId.slice(0, 5)}` : ''),
       totalRoyalties,
-      balance
+      balance,
+      totalMGPaid: mgPaid
     };
-  }), [contracts, reports, licenses]);
+  }), [contracts, reports, licenses, payments]);
 
   const filteredContracts = React.useMemo(() => processedContracts.filter((c: any) => {
     if (statusFilter === 'Todos') return true;
@@ -5550,12 +5906,13 @@ function ContractsView({ contracts, licenses, reports, lines, products, isAdmin 
   );
 }
 
-function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
+function SalesView({ sales, licenses, lines, categories, products, contracts, isAdmin }: {
   sales: Sale[],
   licenses: License[],
   lines: Line[],
   categories: ProductCategory[],
   products: Product[],
+  contracts: Contract[],
   isAdmin: boolean
 }) {
   const [selectedLicenses, setSelectedLicenses] = useState<string[]>([]);
@@ -5565,9 +5922,15 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
   const [selectedSkus, setSelectedSkus] = useState<string[]>([]);
   const [selectedSaleMonths, setSelectedSaleMonths] = useState<string[]>([]);
   const [selectedSaleYears, setSelectedSaleYears] = useState<string[]>([]);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteProgress, setDeleteProgress] = useState(0);
-  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(50);
+
+  // Sales Summary State
+  const [salesSummaryLicenseIds, setSalesSummaryLicenseIds] = useState<string[]>([]);
+  const [salesSummaryLineIds, setSalesSummaryLineIds] = useState<string[]>([]);
+  const [salesSummaryCategoryIds, setSalesSummaryCategoryIds] = useState<string[]>([]);
+  const [salesSummaryValueType, setSalesSummaryValueType] = useState<'quantity' | 'totalValue' | 'netValue' | 'royaltyValue'>('netValue');
+  const [salesSummaryViewMode, setSalesSummaryViewMode] = useState<'monthly' | 'quarterly'>('monthly');
+  const [expandedSalesYears, setExpandedSalesYears] = useState<number[]>([]);
 
   const monthMap: Record<string, string> = {
     '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
@@ -5732,59 +6095,6 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
     };
   }, [licenses, lines, categories, products, selectedLicenses, selectedLines, selectedCategories, selectedYears, selectedSkus]);
 
-  const handleClearAllSales = async () => {
-    setShowConfirmDelete(false);
-    setIsDeleting(true);
-    setDeleteProgress(0);
-    
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    try {
-      const totalSales = sales.length;
-      if (totalSales === 0) {
-        setIsDeleting(false);
-        return;
-      }
-
-      const batchSize = 500;
-      const batches = [];
-      let currentBatch = writeBatch(db);
-      let opCount = 0;
-
-      for (const sale of sales) {
-        if (!sale.id) continue;
-        currentBatch.delete(doc(db, 'sales', sale.id));
-        opCount++;
-
-        if (opCount === batchSize) {
-          batches.push(currentBatch);
-          currentBatch = writeBatch(db);
-          opCount = 0;
-        }
-      }
-
-      if (opCount > 0) {
-        batches.push(currentBatch);
-      }
-
-      let committedCount = 0;
-      for (let i = 0; i < batches.length; i++) {
-        await batches[i].commit();
-        committedCount += (i === batches.length - 1 && opCount > 0) ? opCount : batchSize;
-        const progress = Math.min(Math.round((committedCount / totalSales) * 100), 100);
-        setDeleteProgress(progress);
-      }
-
-      toast.success(`${totalSales} vendas foram apagadas da base.`);
-    } catch (error) {
-      console.error("Erro ao apagar vendas:", error);
-      toast.error("Houve um erro ao apagar as vendas da base de dados.");
-    } finally {
-      setIsDeleting(false);
-      setDeleteProgress(0);
-    }
-  };
-
   const groupedSales = React.useMemo(() => {
     const groups = new Map<string, any>();
     filteredSales.forEach(s => {
@@ -5830,83 +6140,276 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
 
   const [viewMode, setViewMode] = useState<'grouped' | 'individual'>('grouped');
 
+  const salesSummaryData = React.useMemo(() => {
+    const filtered = sales.filter(s => {
+      if (salesSummaryLicenseIds.length > 0 && !salesSummaryLicenseIds.includes(s.licenseId)) return false;
+      if (salesSummaryLineIds.length > 0 && !salesSummaryLineIds.includes(s.lineId)) return false;
+      if (salesSummaryCategoryIds.length > 0 && !salesSummaryCategoryIds.includes(s.categoryId)) return false;
+      return true;
+    });
+
+    const yearsSet = new Set<number>();
+    const grid: Record<number, Record<number, number>> = {};
+
+    filtered.forEach(s => {
+      const dt = getSafeDate(s.date);
+      if (!isNaN(dt.getTime())) {
+        const y = dt.getFullYear();
+        const m = dt.getMonth() + 1;
+        yearsSet.add(y);
+        
+        if (!grid[y]) grid[y] = {};
+        if (!grid[y][m]) grid[y][m] = 0;
+        
+        const val = salesSummaryValueType === 'quantity' ? (Number(s.quantity) || 0) :
+                   salesSummaryValueType === 'totalValue' ? (Number(s.totalValue) || 0) :
+                   salesSummaryValueType === 'netValue' ? (Number(s.netValue) || 0) :
+                   (() => {
+                     // Try to find a matching contract for this sale line
+                     const contract = contracts.find((c: any) => 
+                       c.licenseId === s.licenseId && 
+                       (Array.isArray(c.lineIds) && c.lineIds.includes(s.lineId))
+                     );
+                     // Use specific rate or a default if none matches (fallback to 10% estimation)
+                     const rate = contract?.royaltyRateNetSales1 || 0.1;
+                     return (Number(s.netValue) || 0) * rate;
+                   })();
+        
+        grid[y][m] += val;
+      }
+    });
+
+    const years = Array.from(yearsSet).sort((a, b) => a - b); // Oldest years first
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+
+    return { years, months, grid };
+  }, [sales, salesSummaryLicenseIds, salesSummaryLineIds, salesSummaryCategoryIds, salesSummaryValueType, contracts]);
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-bold tracking-tight text-slate-800">Relatório de Vendas</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400">Exibição:</span>
-            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-              <button 
-                onClick={() => setViewMode('grouped')}
-                className={cn(
-                  "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
-                  viewMode === 'grouped' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                )}
-              >
-                Agrupado (SKU/Mês)
-              </button>
-              <button 
-                onClick={() => setViewMode('individual')}
-                className={cn(
-                  "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
-                  viewMode === 'individual' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                )}
-              >
-                Individual
-              </button>
+      {/* Header section moved to global header */}
+
+      {/* Sales Summary Section */}
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-200 pt-4 pb-4">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-slate-800">
+                <TrendingUp size={18} className="text-emerald-600" />
+                <h2 className="text-base font-semibold">Resumo de Vendas Consolidadas</h2>
+              </div>
+              
+              <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500 bg-emerald-50/50 px-3 py-1 rounded-full border border-emerald-100">
+                <span>{salesSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
+                <span className="w-1 h-1 rounded-full bg-emerald-300" />
+                <span>
+                  {salesSummaryValueType === 'quantity' ? 'Quantidades' : 
+                   salesSummaryValueType === 'totalValue' ? 'Valor Total (Bruto)' : 
+                   salesSummaryValueType === 'netValue' ? 'Valor Líquido' : 
+                   'Valor de Royalties'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Sales Summary Filters */}
+            <div className="flex flex-wrap items-end gap-3 w-full">
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Licenciadores</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px]"
+                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  selectedValues={salesSummaryLicenseIds}
+                  onChange={setSalesSummaryLicenseIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Linhas</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px]"
+                  options={lines.filter(l => salesSummaryLicenseIds.length === 0 || salesSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  selectedValues={salesSummaryLineIds}
+                  onChange={setSalesSummaryLineIds}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Categorias</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px]"
+                  options={categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))}
+                  selectedValues={salesSummaryCategoryIds}
+                  onChange={setSalesSummaryCategoryIds}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[120px] space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Período</Label>
+                <Select value={salesSummaryViewMode} onValueChange={(v: any) => setSalesSummaryViewMode(v)}>
+                  <SelectTrigger className="h-7 text-[10px] w-full">
+                    <span>{salesSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
+                  </SelectTrigger>
+                  <SelectContent className="z-[9999]">
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-[150px] space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Tipo de Valor</Label>
+                <Select value={salesSummaryValueType} onValueChange={(v: any) => setSalesSummaryValueType(v)}>
+                  <SelectTrigger className="h-7 text-[10px] w-full">
+                    <span>
+                      {salesSummaryValueType === 'quantity' ? 'Quantidades' : 
+                       salesSummaryValueType === 'totalValue' ? 'Valor Total (Bruto)' : 
+                       salesSummaryValueType === 'netValue' ? 'Valor Líquido' : 
+                       'Valor de Royalties'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="z-[9999]">
+                    <SelectItem value="quantity">Quantidades</SelectItem>
+                    <SelectItem value="totalValue">Valor Total (Bruto)</SelectItem>
+                    <SelectItem value="netValue">Valor Líquido</SelectItem>
+                    <SelectItem value="royaltyValue">Valor de Royalties</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex gap-3">
-          {isAdmin && sales.length > 0 && (
-            <Dialog open={showConfirmDelete} onOpenChange={setShowConfirmDelete}>
-              <DialogTrigger 
-                className={cn(buttonVariants({ variant: "destructive" }), "gap-2 min-w-[140px]")}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Apagando {deleteProgress}%
-                  </>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse table-fixed min-w-[1000px]">
+              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Ano</th>
+                  {salesSummaryViewMode === 'monthly' ? (
+                    ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map(m => (
+                      <th key={m} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/12)]">{m}</th>
+                    ))
+                  ) : (
+                    ['T1', 'T2', 'T3', 'T4'].map(t => (
+                      <th key={t} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/4)]">{t}</th>
+                    ))
+                  )}
+                  <th className="px-3 py-2 text-center w-28">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {salesSummaryData.years.length === 0 ? (
+                  <tr>
+                    <td colSpan={salesSummaryViewMode === 'monthly' ? 14 : 6} className="px-4 py-8 text-center text-slate-400 italic">
+                      Nenhuma venda encontrada para os filtros selecionados.
+                    </td>
+                  </tr>
                 ) : (
-                  <>
-                    <LogOut size={16} className="rotate-90" /> 
-                    Apagar Base
-                  </>
-                )}
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle className="text-red-600 flex items-center gap-2">
-                    <AlertCircle className="h-5 w-5" />
-                    Confirmar Exclusão Total
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="py-4 space-y-2 text-slate-600">
-                  <p className="font-semibold text-slate-900">Esta ação é irreversível.</p>
-                  <p>Você tem certeza que deseja apagar absolutamente <span className="font-bold underline">todas as {sales.length} vendas</span> da base de dados?</p>
-                </div>
-                <DialogFooter className="gap-2 sm:gap-0">
-                  <Button variant="outline" onClick={() => setShowConfirmDelete(false)}>Cancelar</Button>
-                  <Button variant="destructive" onClick={handleClearAllSales}>Sim, Apagar Tudo</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-          <ImportSalesDialog products={products} />
-        </div>
-      </div>
+                  salesSummaryData.years.map(year => {
+                    let yearTotal = 0;
+                    const rowValues = salesSummaryViewMode === 'monthly' ? (
+                      salesSummaryData.months.map(m => {
+                        const val = salesSummaryData.grid[year]?.[m] || 0;
+                        yearTotal += val;
+                        return val;
+                      })
+                    ) : (
+                      [1, 2, 3, 4].map(q => {
+                        const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                        const val = qMonths.reduce((acc, m) => acc + (salesSummaryData.grid[year]?.[m] || 0), 0);
+                        yearTotal += val;
+                        return val;
+                      })
+                    );
 
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <div className="flex flex-col lg:flex-row gap-4 w-full">
+                    return (
+                      <tr key={year} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-3 py-2 font-bold bg-slate-50/30 border-r border-slate-200 text-center">
+                          {year}
+                        </td>
+                        {rowValues.map((v, i) => (
+                          <td key={i} className={`px-3 py-2 text-right border-r border-slate-200 ${v > 0 ? 'text-slate-900 font-medium' : 'text-slate-300'}`}>
+                            {salesSummaryValueType === 'quantity' ? 
+                              v.toLocaleString('pt-BR') : 
+                              v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-right font-bold bg-emerald-50/30 text-emerald-700">
+                          {salesSummaryValueType === 'quantity' ? 
+                            yearTotal.toLocaleString('pt-BR') : 
+                            yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-0">
+        <Card className="border-slate-200 shadow-sm overflow-hidden bg-slate-50/20">
+          <CardHeader className="bg-white border-b border-slate-200 py-4 px-6">
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={18} className="text-blue-600" />
+                <h2 className="text-base font-semibold text-slate-800">Listagem de Vendas por Produto</h2>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Exibição:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button 
+                      onClick={() => setViewMode('grouped')}
+                      className={cn(
+                        "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                        viewMode === 'grouped' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      Agrupado
+                    </button>
+                    <button 
+                      onClick={() => setViewMode('individual')}
+                      className={cn(
+                        "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                        viewMode === 'individual' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      Individual
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Ver:</span>
+                  <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); }}>
+                    <SelectTrigger className="h-7 text-[10px] bg-slate-100 border-slate-200 w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[9999]">
+                      <SelectItem value="10">10 itens</SelectItem>
+                      <SelectItem value="50">50 itens</SelectItem>
+                      <SelectItem value="100">100 itens</SelectItem>
+                      <SelectItem value="500">500 itens</SelectItem>
+                      <SelectItem value="1000">1000 itens</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+                <div className="pt-4 border-t border-slate-200">
+                  <div className="flex flex-wrap items-end gap-3 w-full">
             {/* Licenciador Filter */}
-            <div className="w-full lg:flex-1 space-y-2">
+            <div className="min-w-[150px] flex-1 space-y-1">
               <Label className="text-[11px] text-slate-400">Licenciador</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={availableOptions.licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
                 selectedValues={selectedLicenses}
                 onChange={setSelectedLicenses}
@@ -5915,9 +6418,10 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
             </div>
 
             {/* Linha Filter */}
-            <div className="w-full lg:flex-1 space-y-2">
+            <div className="min-w-[130px] flex-1 space-y-1">
               <Label className="text-[11px] text-slate-400">Linha</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={availableOptions.lines.map(l => ({ label: l.nomelinha, value: l.id }))}
                 selectedValues={selectedLines}
                 onChange={setSelectedLines}
@@ -5926,9 +6430,10 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
             </div>
 
             {/* Categoria Filter */}
-            <div className="w-full lg:flex-[1.2] space-y-2">
+            <div className="min-w-[140px] flex-1 space-y-1">
               <Label className="text-[11px] text-slate-400">Categoria</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={availableOptions.categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))}
                 selectedValues={selectedCategories}
                 onChange={setSelectedCategories}
@@ -5937,9 +6442,10 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
             </div>
 
             {/* Ano Filter */}
-            <div className="w-full lg:w-28 shrink-0 space-y-2">
+            <div className="min-w-[90px] max-w-[110px] space-y-1">
               <Label className="text-[11px] text-slate-400">Ano Lanç.</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={availableOptions.years.sort((a,b) => b-a).map(y => ({ label: String(y), value: String(y) }))}
                 selectedValues={selectedYears}
                 onChange={setSelectedYears}
@@ -5948,9 +6454,10 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
             </div>
 
             {/* SKU Filter */}
-            <div className="w-full lg:flex-[2.5] space-y-2">
+            <div className="min-w-[200px] flex-[2] space-y-1">
               <Label className="text-[11px] text-slate-400">Código SKU</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={availableOptions.skus.sort().map(sku => {
                   const prod = products.find(p => String(p.sku || "").trim() === String(sku || "").trim());
                   const displayName = prod ? `${sku} - ${prod.name}` : sku;
@@ -5961,13 +6468,12 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
                 placeholder="Todos"
               />
             </div>
-          </div>
 
-          <div className="flex flex-col lg:flex-row gap-4 w-full mt-4">
             {/* Sale Month Filter */}
-            <div className="w-full lg:flex-[1] space-y-2">
-              <Label className="text-[11px] text-slate-400">Mês da Venda</Label>
+            <div className="min-w-[110px] max-w-[130px] space-y-1">
+              <Label className="text-[11px] text-slate-400">Mês Venda</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={allSaleMonths.map(m => ({ label: monthMap[m] || m, value: m }))}
                 selectedValues={selectedSaleMonths}
                 onChange={setSelectedSaleMonths}
@@ -5976,17 +6482,16 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
             </div>
 
             {/* Sale Year Filter */}
-            <div className="w-full lg:flex-[1] space-y-2">
-              <Label className="text-[11px] text-slate-400">Ano da Venda</Label>
+            <div className="min-w-[100px] max-w-[120px] space-y-1">
+              <Label className="text-[11px] text-slate-400">Ano Venda</Label>
               <MultiSelectDropdown
+                className="h-8 text-xs"
                 options={allSaleYears.map(y => ({ label: y, value: y }))}
                 selectedValues={selectedSaleYears}
                 onChange={setSelectedSaleYears}
                 placeholder="Todos"
               />
             </div>
-            
-            <div className="w-full lg:flex-[5] space-y-2"></div>
           </div>
 
           {(selectedLicenses.length > 0 || selectedLines.length > 0 || selectedCategories.length > 0 || selectedYears.length > 0 || selectedSkus.length > 0 || selectedSaleMonths.length > 0 || selectedSaleYears.length > 0) && (
@@ -6007,7 +6512,9 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
               <X size={14} className="mr-1" /> Limpar Filtros
             </Button>
           )}
-        </CardHeader>
+            </div>
+          </div>
+      </CardHeader>
         <CardContent>
           <div className="rounded-md border border-slate-200 overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -6015,6 +6522,7 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
                 <tr>
                   {viewMode === 'grouped' && <th className="px-4 py-3">Mês/Ano</th>}
                   {viewMode === 'individual' && <th className="px-4 py-3">Data</th>}
+                  <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
                   <th className="px-4 py-3">Código SKU</th>
                   <th className="px-4 py-3">Descrição</th>
                   <th className="px-4 py-3">Quantidade</th>
@@ -6027,9 +6535,28 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {viewMode === 'grouped' ? (
-                  groupedSales.map((group) => (
+                  groupedSales.slice(0, pageSize).map((group) => (
                     <tr key={group.sku + group.month + group.year} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-600">{group.month}/{group.year}</td>
+                      <td className="px-4 py-2 text-center">
+                        {(() => {
+                           const imageUrl = (group.sku && String(group.sku).trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${String(group.sku).trim().padStart(6, '0')}.jpg` : null;
+                           return imageUrl ? (
+                             <img 
+                               src={imageUrl} 
+                               alt={group.description} 
+                               className="w-10 h-10 object-cover rounded border border-slate-200 mx-auto" 
+                               referrerPolicy="no-referrer" 
+                               onError={(e) => { 
+                                 e.currentTarget.src = 'https://placehold.co/100x100?text=Sem+Imagem';
+                                 e.currentTarget.onerror = null; 
+                               }} 
+                             />
+                           ) : (
+                             <div className="w-10 h-10 mx-auto bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-[9px] text-slate-400">N/A</div>
+                           );
+                        })()}
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={group.description}>{group.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.quantity.toLocaleString('pt-BR')}</td>
@@ -6040,13 +6567,32 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
                     </tr>
                   ))
                 ) : (
-                  filteredSales.map((sale) => {
+                  filteredSales.slice(0, pageSize).map((sale) => {
                     const totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
                     const totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
                     
                     return (
                     <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{formatDateBR(sale.date)}</td>
+                      <td className="px-4 py-2 text-center">
+                        {(() => {
+                           const imageUrl = (sale.sku && String(sale.sku).trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${String(sale.sku).trim().padStart(6, '0')}.jpg` : null;
+                           return imageUrl ? (
+                             <img 
+                               src={imageUrl} 
+                               alt={sale.description} 
+                               className="w-10 h-10 object-cover rounded border border-slate-200 mx-auto" 
+                               referrerPolicy="no-referrer" 
+                               onError={(e) => { 
+                                 e.currentTarget.src = 'https://placehold.co/100x100?text=Sem+Imagem';
+                                 e.currentTarget.onerror = null; 
+                               }} 
+                             />
+                           ) : (
+                             <div className="w-10 h-10 mx-auto bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-[9px] text-slate-400">N/A</div>
+                           );
+                        })()}
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
@@ -6099,6 +6645,7 @@ function SalesView({ sales, licenses, lines, categories, products, isAdmin }: {
           </div>
         </CardContent>
       </Card>
+    </div>
       
       {isAdmin && sales.length === 0 && (
         <div className="flex justify-center">
@@ -6162,13 +6709,28 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   const [selectedLaunchYears, setSelectedLaunchYears] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState<number>(50);
 
-  const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines } = React.useMemo(() => {
+  // Summary Table States
+  const [summaryLicenseIds, setSummaryLicenseIds] = useState<string[]>([]);
+  const [summaryLineIds, setSummaryLineIds] = useState<string[]>([]);
+  const [summaryContractIds, setSummaryContractIds] = useState<string[]>([]);
+  const [summaryCurrencies, setSummaryCurrencies] = useState<string[]>([]);
+  const [summaryCalculationTypes, setSummaryCalculationTypes] = useState<string[]>([]);
+  const [summaryValueType, setSummaryValueType] = useState<string>('royaltyValue');
+  const [summaryViewMode, setSummaryViewMode] = useState<string>('monthly');
+  const [expandedYears, setExpandedYears] = useState<number[]>([]);
+
+  const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines, allCurrencies } = React.useMemo(() => {
     const yearsSet = new Set<number>();
     const monthsSet = new Set<number>();
     const launchYearsSet = new Set<number>();
+    const currenciesSet = new Set<string>();
 
     reports.forEach(r => {
+      const contract = contracts.find(c => c.id === r.contractId);
+      if (contract?.currency) currenciesSet.add(contract.currency);
+
       if (selectedLicenseId && r.licenseId !== selectedLicenseId) return;
       if (selectedLineIds.length > 0 && (!r.lineId || !selectedLineIds.includes(r.lineId))) return;
 
@@ -6186,9 +6748,45 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       availableMonths: Array.from(monthsSet).sort((a,b)=>a-b),
       availableLaunchYears: Array.from(launchYearsSet).sort((a,b)=>b-a),
       availableContracts: contracts.filter(c => c.licenseId === selectedLicenseId),
-      availableLines: lines.filter(l => l.licenseId === selectedLicenseId)
+      availableLines: lines.filter(l => l.licenseId === selectedLicenseId),
+      allCurrencies: Array.from(currenciesSet).sort()
     };
   }, [reports, products, selectedLicenseId, selectedLineIds, contracts, lines]);
+
+  const summaryData = React.useMemo(() => {
+    const filtered = reports.filter(r => {
+      if (summaryLicenseIds.length > 0 && !summaryLicenseIds.includes(r.licenseId || '')) return false;
+      if (summaryLineIds.length > 0 && !summaryLineIds.includes(r.lineId)) return false;
+      if (summaryContractIds.length > 0 && !summaryContractIds.includes(r.contractId)) return false;
+      
+      if (summaryCurrencies.length > 0) {
+        const contract = contracts.find(c => c.id === r.contractId);
+        if (!contract || !summaryCurrencies.includes(contract.currency || '')) return false;
+      }
+      
+      if (summaryCalculationTypes.length > 0 && !summaryCalculationTypes.includes(r.calculationType || '')) return false;
+
+      return true;
+    });
+
+    const years = Array.from(new Set(filtered.map(r => r.year))).sort((a, b) => a - b);
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+    
+    const grid: Record<number, Record<number, number>> = {};
+    years.forEach(y => {
+      grid[y] = {};
+      months.forEach(m => grid[y][m] = 0);
+    });
+
+    filtered.forEach(r => {
+      const value = summaryValueType === 'quantity' ? r.quantity :
+                    summaryValueType === 'netValue' ? r.netValue :
+                    r.royaltyValue;
+      grid[r.year][r.month] += value;
+    });
+
+    return { years, months, grid };
+  }, [reports, summaryLicenseIds, summaryLineIds, summaryContractIds, summaryCurrencies, summaryCalculationTypes, summaryValueType, summaryViewMode, contracts]);
 
   const filteredReports = React.useMemo(() => {
     return reports.filter(r => {
@@ -6285,70 +6883,295 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
 
   return (
     <div className="space-y-4">
+      {/* Resumo de Apuração Section */}
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-200">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 size={18} className="text-blue-600" />
+              <h2 className="text-base font-semibold text-slate-800">Resumo de Apuração</h2>
+            </div>
+            
+            {/* Summary Filters */}
+            <div className="flex flex-wrap items-end gap-3 w-full">
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Licenciadores</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs"
+                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  selectedValues={summaryLicenseIds}
+                  onChange={setSummaryLicenseIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Linhas</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs"
+                  options={lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  selectedValues={summaryLineIds}
+                  onChange={setSummaryLineIds}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Contratos</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs"
+                  options={contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))}
+                  selectedValues={summaryContractIds}
+                  onChange={setSummaryContractIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[100px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Moeda</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs"
+                  options={allCurrencies.map(c => ({ label: c, value: c }))}
+                  selectedValues={summaryCurrencies}
+                  onChange={setSummaryCurrencies}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[130px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Tipo de Cálculo</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs"
+                  options={[
+                    { label: 'Vendas', value: 'Vendas' },
+                    { label: 'Compras', value: 'Compras' },
+                    { label: 'FOB', value: 'FOB' }
+                  ]}
+                  selectedValues={summaryCalculationTypes}
+                  onChange={setSummaryCalculationTypes}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[140px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Valores</Label>
+                <Select value={summaryValueType} onValueChange={setSummaryValueType}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue>
+                      {summaryValueType === 'quantity' ? 'Quantidades' : 
+                       summaryValueType === 'netValue' ? 'Valores Líquidos' : 
+                       summaryValueType === 'royaltyValue' ? 'Valor de Royalties' : ''}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="quantity">Quantidades</SelectItem>
+                    <SelectItem value="netValue">Valores Líquidos</SelectItem>
+                    <SelectItem value="royaltyValue">Valor de Royalties</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-[130px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Visão</Label>
+                <Select value={summaryViewMode} onValueChange={setSummaryViewMode}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue>
+                      {summaryViewMode === 'monthly' ? 'Mensal' : 
+                       summaryViewMode === 'quarterly' ? 'Trimestral' : ''}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse table-fixed min-w-[1000px]">
+                <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Ano</th>
+                    {summaryViewMode === 'monthly' ? (
+                      ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map(m => (
+                        <th key={m} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/12)]">{m}</th>
+                      ))
+                    ) : (
+                      ['T1', 'T2', 'T3', 'T4'].map(t => (
+                        <th key={t} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/4)]">{t}</th>
+                      ))
+                    )}
+                    <th className="px-3 py-2 text-center w-28">Total</th>
+                  </tr>
+                </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summaryData.years.map(year => {
+                  const isExpanded = expandedYears.includes(year);
+                  const toggleYear = () => {
+                    setExpandedYears(prev => 
+                      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
+                    );
+                  };
+
+                  let yearTotal = 0;
+                  const rowValues = summaryViewMode === 'monthly' ? (
+                    summaryData.months.map(m => {
+                      const val = summaryData.grid[year][m] || 0;
+                      yearTotal += val;
+                      return val;
+                    })
+                  ) : (
+                    [1, 2, 3, 4].map(q => {
+                      const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                      const val = qMonths.reduce((acc, m) => acc + (summaryData.grid[year][m] || 0), 0);
+                      yearTotal += val;
+                      return val;
+                    })
+                  );
+
+                  return (
+                    <React.Fragment key={year}>
+                      <tr className="hover:bg-slate-50/50 cursor-pointer transition-colors" onClick={toggleYear}>
+                        <td className="px-3 py-2 font-medium bg-slate-50/30 border-r border-slate-200 flex items-center justify-center gap-2">
+                          <span className="text-slate-400">
+                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          </span>
+                          {year}
+                        </td>
+                        {rowValues.map((v, i) => (
+                          <td key={i} className="px-3 py-2 text-right border-r border-slate-200 text-slate-600">
+                            {summaryValueType === 'quantity' ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-right font-bold bg-blue-50/30 text-blue-700">
+                          {summaryValueType === 'quantity' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-50/80 animate-in fade-in slide-in-from-top-1 border-b border-slate-100">
+                          <td className="px-3 py-1.5 text-[10px] italic text-slate-500 border-r border-slate-200 bg-slate-100/30 text-center">
+                            % Cresc./Decr.
+                          </td>
+                          {rowValues.map((v, i) => {
+                            // Adjust for quarterly if needed
+                            let comparisonVal = 0;
+                            const prevYear = year - 1;
+                            
+                            if (summaryViewMode === 'monthly') {
+                              comparisonVal = summaryData.grid[prevYear]?.[i + 1] || 0;
+                            } else {
+                              const q = i + 1;
+                              const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                              comparisonVal = qMonths.reduce((acc, m) => acc + (summaryData.grid[prevYear]?.[m] || 0), 0);
+                            }
+
+                            const variance = comparisonVal > 0 ? ((v - comparisonVal) / comparisonVal) * 100 : 0;
+                            const isPositive = variance > 0;
+                            const isZero = variance === 0 && v === comparisonVal;
+
+                            if (comparisonVal === 0) return (
+                              <td key={i} className="px-1 py-1.5 text-center border-r border-slate-200 text-slate-400 text-[10px]">-</td>
+                            );
+
+                            return (
+                              <td key={i} className={`px-1 py-1.5 text-center border-r border-slate-200 text-[10px] font-medium ${isPositive ? 'text-emerald-600' : isZero ? 'text-slate-400' : 'text-rose-600'}`}>
+                                {isPositive ? '+' : ''}{variance.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-1.5 text-right bg-blue-50/50 text-[10px] font-bold text-slate-600">
+                            {(() => {
+                              let prevYearTotal = 0;
+                              summaryData.months.forEach(m => {
+                                prevYearTotal += summaryData.grid[year - 1]?.[m] || 0;
+                              });
+                              if (prevYearTotal === 0) return '-';
+                              const totalVar = ((yearTotal - prevYearTotal) / prevYearTotal) * 100;
+                              return `${totalVar > 0 ? '+' : ''}${totalVar.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+                            })()}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+              <tfoot className="bg-slate-50/80 font-bold border-t border-slate-200">
+                <tr>
+                  <td className="px-3 py-2 border-r border-slate-200 text-center">Totais</td>
+                  {(summaryViewMode === 'monthly' ? Array.from({length: 12}, (_, i) => i + 1) : [1, 2, 3, 4]).map((idx, i) => {
+                    let colTotal = 0;
+                    summaryData.years.forEach(y => {
+                      if (summaryViewMode === 'monthly') {
+                        colTotal += summaryData.grid[y][idx] || 0;
+                      } else {
+                        const qMonths = idx === 1 ? [1, 2, 3] : idx === 2 ? [4, 5, 6] : idx === 3 ? [7, 8, 9] : [10, 11, 12];
+                        colTotal += qMonths.reduce((acc, m) => acc + (summaryData.grid[y][m] || 0), 0);
+                      }
+                    });
+                    return (
+                      <td key={i} className="px-3 py-2 text-right border-r border-slate-200">
+                        {summaryValueType === 'quantity' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-2 text-right bg-blue-100/50 text-blue-800">
+                    {(() => {
+                      let grandTotal = 0;
+                      summaryData.years.forEach(y => {
+                        summaryData.months.forEach(m => {
+                          grandTotal += summaryData.grid[y][m] || 0;
+                        });
+                      });
+                      return summaryValueType === 'quantity' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="bg-slate-50 border-b border-slate-200 p-4">
-          <div className="flex flex-row items-center justify-between space-y-0 mb-4">
-            <div>
-              <CardTitle className="text-sm font-semibold text-slate-800">Filtros Livres de Apuração (Itens Salvos)</CardTitle>
+          <div className="flex flex-row items-center justify-between space-y-0">
+            <div className="flex items-center gap-2">
+              <List size={16} className="text-slate-500" />
+              <CardTitle className="text-sm font-semibold text-slate-800">Detalhamento de Apuração</CardTitle>
             </div>
-            {isAdmin && reports.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Dialog>
-                  <DialogTrigger nativeButton={true} render={
-                    <button className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-2 text-red-600 border-red-200 hover:bg-red-50")}>
-                      <Trash2 size={14} /> Limpar Tudo
-                    </button>
-                  } />
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Limpar Todos os Registros</DialogTitle>
-                      <DialogDescription>
-                        Isso excluirá permanentemente TODOS os {reports.length} registros de royalties do banco de dados. Esta ação não pode ser desfeita.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => {}}>Cancelar</Button>
-                      <Button variant="destructive" onClick={async () => {
-                        try {
-                          const promises = reports.map((r: any) => deleteDoc(doc(db, 'reports', r.id)));
-                          await Promise.all(promises);
-                          toast.success("Todos os registros foram excluídos!");
-                        } catch (err) {
-                          toast.error("Erro ao excluir registros.");
-                        }
-                      }}>Confirmar Exclusão Total</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            )}
-            {selectedIds.length > 0 && (
-              <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
-                <span className="text-xs font-medium text-slate-500">{selectedIds.length} grupos selecionados</span>
-                <Dialog>
-                  <DialogTrigger nativeButton={true} render={
-                    <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2")}>
-                      <Trash2 size={14} /> Excluir Selecionados
-                    </button>
-                  } />
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Confirmar Exclusão em Massa</DialogTitle>
-                      <DialogDescription>
-                        Tem certeza que deseja excluir os registros selecionados do banco de dados?
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => {}}>Cancelar</Button>
-                      <Button variant="destructive" onClick={handleDeleteSelected}>Confirmar Exclusão</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
+                  <span className="text-xs font-medium text-slate-500">{selectedIds.length} grupos selecionados</span>
+                  <Dialog>
+                    <DialogTrigger nativeButton={true} render={
+                      <button className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "gap-2 h-8 px-3")}>
+                        <Trash2 size={14} /> Excluir
+                      </button>
+                    } />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Confirmar Exclusão em Massa</DialogTitle>
+                        <DialogDescription>
+                          Tem certeza que deseja excluir os registros selecionados do banco de dados?
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => {}}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleDeleteSelected}>Confirmar Exclusão</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-            <div className="space-y-1">
+          <div className="flex flex-wrap items-end gap-3 mt-4">
+            <div className="space-y-1 min-w-[180px] flex-1">
               <Label className="text-xs">Licenciador</Label>
               <SearchableSelect
                 className="h-8 text-xs"
@@ -6366,7 +7189,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[150px] flex-1">
               <Label className="text-xs">Contrato</Label>
               <SearchableSelect
                 disabled={!selectedLicenseId}
@@ -6381,7 +7204,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[140px] flex-1">
               <Label className="text-xs">Linha(s)</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
@@ -6392,8 +7215,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Ano de Lançamento</Label>
+            <div className="space-y-1 min-w-[120px] max-w-[150px]">
+              <Label className="text-xs">Lançamento</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
                 options={availableLaunchYears.map(y => ({ label: String(y), value: String(y) }))}
@@ -6403,7 +7226,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[100px] max-w-[130px]">
               <Label className="text-xs">Ano (Venda)</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
@@ -6414,15 +7237,31 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[100px] max-w-[130px]">
               <Label className="text-xs">Mês (Venda)</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
                 options={availableMonths.map(m => ({ label: String(m).padStart(2, '0'), value: String(m) }))}
                 selectedValues={selectedMonths}
                 onChange={setSelectedMonths}
-                placeholder="Todos os Meses"
+                placeholder="Todos Meses"
               />
+            </div>
+            
+            <div className="space-y-1 min-w-[100px]">
+              <Label className="text-xs">Visualização</Label>
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="h-8 text-xs bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="z-[9999]">
+                  <SelectItem value="10">10 itens</SelectItem>
+                  <SelectItem value="50">50 itens</SelectItem>
+                  <SelectItem value="100">100 itens</SelectItem>
+                  <SelectItem value="500">500 itens</SelectItem>
+                  <SelectItem value="1000">1000 itens</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -6458,7 +7297,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {tableData.map((row, i) => {
+                {tableData.slice(0, pageSize).map((row, i) => {
                   const l = licenses.find(x => x.id === row.licenseId);
                   const ln = lines.find(x => x.id === row.lineId);
                   const contract = contracts.find(c => c.id === row.contractId);
@@ -6573,8 +7412,45 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   const [year, setYear] = useState(payment.year || '');
   const [installmentNumber, setInstallmentNumber] = useState(payment.installmentNumber || '');
   const [status, setStatus] = useState<'pending' | 'paid'>(payment.status || 'paid');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [documentUrl, setDocumentUrl] = useState(payment.documentUrl || '');
+  const [documentName, setDocumentName] = useState(payment.documentName || '');
 
   const filteredContracts = contracts.filter(c => !licenseId || c.licenseId === licenseId);
+  const selectedContract = contracts.find(c => c.id === contractId);
+
+  const availableYears = React.useMemo(() => {
+    if (!selectedContract) return [];
+    const yearsSet = new Set<string>();
+    
+    if (type === 'mg' && selectedContract.mgInstallments) {
+      selectedContract.mgInstallments.forEach(i => i.year && yearsSet.add(String(i.year)));
+    } else if (type === 'marketing' && selectedContract.marketingFundInstallments) {
+      selectedContract.marketingFundInstallments.forEach(i => i.year && yearsSet.add(String(i.year)));
+    } else if (selectedContract.isDividedIntoYears && selectedContract.years) {
+      selectedContract.years.forEach(y => yearsSet.add(String(y.yearNumber)));
+    }
+    
+    return Array.from(yearsSet).sort();
+  }, [selectedContract, type]);
+
+  const availableInstallments = React.useMemo(() => {
+    if (!selectedContract) return [];
+    const instSet = new Set<string>();
+
+    if (type === 'mg' && selectedContract.mgInstallments) {
+      selectedContract.mgInstallments.forEach(i => {
+        if (!year || String(i.year) === year) instSet.add(String(i.installmentNumber));
+      });
+    } else if (type === 'marketing' && selectedContract.marketingFundInstallments) {
+      selectedContract.marketingFundInstallments.forEach(i => {
+        if (!year || String(i.year) === year) instSet.add(String(i.installmentNumber));
+      });
+    }
+    
+    return Array.from(instSet).sort();
+  }, [selectedContract, type, year]);
 
   const handleDelete = async () => {
     try {
@@ -6588,7 +7464,16 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUploading(true);
     try {
+      let finalDocumentUrl = documentUrl;
+      let finalDocumentName = documentName;
+
+      if (file) {
+        finalDocumentUrl = await uploadFile(file, `payments/${Date.now()}_${file.name}`);
+        finalDocumentName = file.name;
+      }
+
       await updateDoc(doc(db, 'payments', payment.id), {
         responsible,
         receiptDate,
@@ -6607,12 +7492,16 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
         year,
         installmentNumber,
         status,
+        documentUrl: finalDocumentUrl,
+        documentName: finalDocumentName,
         updatedAt: serverTimestamp()
       });
       toast.success('Pagamento atualizado!');
       setOpen(false);
     } catch (err) {
       toast.error('Erro ao atualizar pagamento.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -6621,8 +7510,8 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
       <DialogTrigger
         nativeButton={true}
         render={
-          <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600")}>
-            <Settings size={16} />
+          <button className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-slate-400 hover:text-blue-600 h-8 w-8")}>
+            <Pencil size={16} />
           </button>
         }
       />
@@ -6654,7 +7543,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
                 <SelectContent>
                   <SelectItem value="mg">Mínimo Garantido</SelectItem>
                   <SelectItem value="excess">Royalties Excedentes</SelectItem>
-                  <SelectItem value="marketing">Fundo de Marketing</SelectItem>
+                  <SelectItem value="marketing">Fundo de Marketing (CMF)</SelectItem>
                   <SelectItem value="other">Outros</SelectItem>
                 </SelectContent>
               </Select>
@@ -6680,11 +7569,23 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
             <div className="space-y-2">
               <Label>Contrato</Label>
               <Select onValueChange={setContractId} value={contractId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o contrato" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o contrato">
+                    {(() => {
+                      const c = contracts.find(c => c.id === contractId);
+                      if (!c) return null;
+                      return c.contractNumber || `ID: ${c.id.slice(0,5)}`;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  {[...filteredContracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
-                  ))}
+                  {[...filteredContracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => {
+                    return (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.contractNumber || `ID: ${c.id.slice(0,5)}`}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -6739,11 +7640,33 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Ano</Label>
-              <Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="Ex: 2025" />
+              {availableYears.length > 0 ? (
+                <Select onValueChange={setYear} value={year}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o ano" /></SelectTrigger>
+                  <SelectContent>
+                    {availableYears.map(y => (
+                      <SelectItem key={y} value={y}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="Ex: 2025" />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Parcela</Label>
-              <Input value={installmentNumber} onChange={(e) => setInstallmentNumber(e.target.value)} placeholder="Ex: 1" />
+              {type !== 'excess' && availableInstallments.length > 0 ? (
+                <Select onValueChange={setInstallmentNumber} value={String(installmentNumber)}>
+                  <SelectTrigger><SelectValue placeholder="Selecione a parcela" /></SelectTrigger>
+                  <SelectContent>
+                    {availableInstallments.map(i => (
+                      <SelectItem key={i} value={i}>{i}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={installmentNumber} onChange={(e) => setInstallmentNumber(e.target.value)} placeholder="Ex: 1" disabled={type === 'excess'} />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
@@ -6754,6 +7677,58 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
                   <SelectItem value="pending">Pendente</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Comprovante / Documento (Invoice, Recibo, Boleto)</Label>
+            <div className="flex flex-col gap-2">
+              {documentUrl && (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-100 rounded-md">
+                  <FileText size={16} className="text-blue-500" />
+                  <span className="text-xs text-blue-700 flex-1 truncate">{documentName}</span>
+                  <a 
+                    href={documentUrl} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="text-[10px] font-bold text-blue-600 hover:underline"
+                  >
+                    VISUALIZAR
+                  </a>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6 text-red-500 hover:text-red-700"
+                    onClick={() => {
+                      setDocumentUrl('');
+                      setDocumentName('');
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2">
+                <Input 
+                  type="file" 
+                  onChange={(e) => setFile(e.target.files?.[0] || null)} 
+                  className="cursor-pointer h-9 text-xs"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                />
+                {file && (
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setFile(null)}
+                    className="text-red-500 hover:text-red-600"
+                  >
+                    <X size={16} />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -6796,7 +7771,20 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
                 </Button>
               </div>
             )}
-            <Button type="submit" className="flex-[2] bg-blue-600 hover:bg-blue-700">Atualizar Pagamento</Button>
+            <Button 
+              type="submit" 
+              className="flex-[2] bg-blue-600 hover:bg-blue-700"
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                  Atualizando...
+                </>
+              ) : (
+                'Atualizar Pagamento'
+              )}
+            </Button>
           </div>
         </form>
       </DialogContent>
@@ -6804,13 +7792,412 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   );
 }
 
-function PaymentsView({ payments, contracts, licenses, isAdmin }: {
+function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }: {
   payments: Payment[],
   contracts: Contract[],
   licenses: License[],
+  lines: Line[],
+  reports: RoyaltyReport[],
   isAdmin: boolean
 }) {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  
+  // Summary Table States
+  const [summaryLicenseIds, setSummaryLicenseIds] = useState<string[]>([]);
+  const [summaryLineIds, setSummaryLineIds] = useState<string[]>([]);
+  const [summaryContractIds, setSummaryContractIds] = useState<string[]>([]);
+  const [summaryTypes, setSummaryTypes] = useState<string[]>([]);
+  const [summaryStatuses, setSummaryStatuses] = useState<string[]>([]);
+  const [expandedSummaryYears, setExpandedSummaryYears] = useState<number[]>([]);
+
+  // Filter States
+  const [obsLicenseIds, setObsLicenseIds] = useState<string[]>([]);
+  const [obsContractIds, setObsContractIds] = useState<string[]>([]);
+  const [obsYears, setObsYears] = useState<string[]>([]);
+  const [obsTypes, setObsTypes] = useState<string[]>([]);
+  const [obsInvoices, setObsInvoices] = useState<string[]>([]);
+  const [obsStatuses, setObsStatuses] = useState<string[]>([]);
+  const [obsPaymentDate, setObsPaymentDate] = useState('');
+
+  // Calculate Obligations
+  const obligations = React.useMemo(() => {
+    const list: any[] = [];
+    
+    contracts.forEach(contract => {
+      const license = licenses.find(l => l.id === contract.licenseId);
+      
+      // 1. MG Installments
+      if (contract.mgInstallments && contract.mgInstallments.length > 0) {
+        contract.mgInstallments.forEach((inst, idx) => {
+          const matchingPayment = payments.find(p => 
+            p.contractId === contract.id && 
+            p.type === 'mg' && 
+            Number(p.installmentNumber) === Number(inst.installmentNumber) &&
+            (inst.year ? String(p.year) === String(inst.year) : true)
+          );
+          
+          list.push({
+            id: `mg-${contract.id}-${inst.installmentNumber}-${inst.year || idx}`,
+            licenseId: contract.licenseId,
+            contractId: contract.id,
+            type: 'Mínimo Garantido (MG)',
+            license: license?.nomelicenciador || '-',
+            contract: contract.contractNumber || contract.id,
+            installmentNumber: inst.installmentNumber,
+            year: inst.year || '-',
+            amount: inst.amount,
+            currency: contract.currency || 'BRL',
+            invoice: matchingPayment?.invoice || '-',
+            dueDate: inst.dueDate,
+            status: matchingPayment?.status || 'pending',
+            paymentDate: matchingPayment?.date || '-',
+            documentUrl: matchingPayment?.documentUrl,
+            documentName: matchingPayment?.documentName,
+            rawDate: inst.dueDate
+          });
+        });
+      }
+      
+      // 2. Marketing Fund Installments (CMF)
+      if (contract.marketingFundInstallments && contract.marketingFundInstallments.length > 0) {
+        contract.marketingFundInstallments.forEach((inst, idx) => {
+          const matchingPayment = payments.find(p => 
+            p.contractId === contract.id && 
+            p.type === 'marketing' && 
+            Number(p.installmentNumber) === Number(inst.installmentNumber) &&
+            (inst.year ? String(p.year) === String(inst.year) : true)
+          );
+          
+          list.push({
+            id: `mkt-${contract.id}-${inst.installmentNumber}-${inst.year || idx}`,
+            licenseId: contract.licenseId,
+            contractId: contract.id,
+            type: 'Fundo de Marketing (CMF)',
+            license: license?.nomelicenciador || '-',
+            contract: contract.contractNumber || contract.id,
+            installmentNumber: inst.installmentNumber,
+            year: inst.year || '-',
+            amount: inst.amount,
+            currency: contract.currency || 'BRL',
+            invoice: matchingPayment?.invoice || '-',
+            dueDate: inst.dueDate,
+            status: matchingPayment?.status || 'pending',
+            paymentDate: matchingPayment?.date || '-',
+            documentUrl: matchingPayment?.documentUrl,
+            documentName: matchingPayment?.documentName,
+            rawDate: inst.dueDate
+          });
+        });
+      }
+
+      // 3. Excess Royalties (Calculated based on periods)
+      if (contract.isDividedIntoYears && contract.years && contract.years.length > 0) {
+        contract.years.forEach((cy) => {
+          const startDt = new Date(cy.startDate + 'T00:00:00');
+          const endDt = new Date(cy.endDate + 'T23:59:59');
+          
+          const contractReports = reports.filter(r => {
+            if (r.contractId !== contract.id) return false;
+            const reportDate = new Date(r.year, r.month - 1, 15); // middle of month
+            return reportDate >= startDt && reportDate <= endDt;
+          });
+          
+          const totalRoyalty = contractReports.reduce((sum, r) => sum + (r.royaltyValue || 0), 0);
+          
+          // Total MG for this year: sum of installments belonging to this year
+          // We match by the 'year' field OR by the dueDate falling within the period
+          const mgForYear = (contract.mgInstallments || [])
+            .filter(inst => {
+              // Priority 1: Direct match with yearNumber (e.g. "1" or "Ano 1")
+              const instYearStr = String(inst.year || '').replace(/\D/g, ''); // Extract only digits
+              if (instYearStr === String(cy.yearNumber)) return true;
+              
+              // Priority 2: Match by date range if year is not explicitly set or doesn't match numerically
+              if (inst.dueDate) {
+                const instDate = new Date(inst.dueDate + 'T12:00:00');
+                return instDate >= startDt && instDate <= endDt;
+              }
+              return false;
+            })
+            .reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
+          
+          if (totalRoyalty > mgForYear + 0.01) { // Small epsilon to avoid float rounding issues
+            const excess = totalRoyalty - mgForYear;
+            const matchingPayment = payments.find(p => 
+              p.contractId === contract.id && 
+              p.type === 'excess' && 
+              String(p.year) === String(cy.yearNumber)
+            );
+
+            list.push({
+              id: `excess-${contract.id}-${cy.yearNumber}`,
+              licenseId: contract.licenseId,
+              contractId: contract.id,
+              type: 'Royalties Excedentes',
+              license: license?.nomelicenciador || '-',
+              contract: contract.contractNumber || contract.id,
+              installmentNumber: '-',
+              year: cy.yearNumber,
+              amount: excess,
+              currency: contract.currency || 'BRL',
+              invoice: matchingPayment?.invoice || '-',
+              dueDate: cy.endDate, // Due date is typically after year ends
+              status: matchingPayment?.status || 'pending',
+              paymentDate: matchingPayment?.date || '-',
+              documentUrl: matchingPayment?.documentUrl,
+              documentName: matchingPayment?.documentName,
+              rawDate: cy.endDate
+            });
+          }
+
+          // Excess Marketing Fund if calculated via percentage
+          if (contract.hasMarketingFund && contract.marketingFundRate && contract.marketingFundRate > 0) {
+            const totalNetValue = contractReports.reduce((sum, r) => sum + (r.netValue || 0), 0);
+            const calculatedMktFund = totalNetValue * (contract.marketingFundRate / 100);
+            
+            // Total of installments for this year - same improved matching logic
+            const mktInstallmentsTotal = (contract.marketingFundInstallments || [])
+              .filter(mi => {
+                const instYearStr = String(mi.year || '').replace(/\D/g, '');
+                if (instYearStr === String(cy.yearNumber)) return true;
+                if (mi.dueDate) {
+                  const instDate = new Date(mi.dueDate + 'T12:00:00');
+                  return instDate >= startDt && instDate <= endDt;
+                }
+                return false;
+              })
+              .reduce((sum, mi) => sum + Number(mi.amount || 0), 0);
+
+            if (calculatedMktFund > mktInstallmentsTotal + 0.01) {
+              const excessMkt = calculatedMktFund - mktInstallmentsTotal;
+              const matchingPayment = payments.find(p => 
+                p.contractId === contract.id && 
+                p.type === 'marketing' && 
+                String(p.year) === String(cy.yearNumber) &&
+                !p.installmentNumber // No installment number usually means it's the excess
+              );
+
+              list.push({
+                id: `excess-mkt-${contract.id}-${cy.yearNumber}`,
+                licenseId: contract.licenseId,
+                contractId: contract.id,
+                type: 'Fundo de Marketing (CMF) Excedente',
+                license: license?.nomelicenciador || '-',
+                contract: contract.contractNumber || contract.id,
+                installmentNumber: '-',
+                year: cy.yearNumber,
+                amount: excessMkt,
+                currency: contract.currency || 'BRL',
+                invoice: matchingPayment?.invoice || '-',
+                dueDate: cy.endDate,
+                status: matchingPayment?.status || 'pending',
+                paymentDate: matchingPayment?.date || '-',
+                documentUrl: matchingPayment?.documentUrl,
+                documentName: matchingPayment?.documentName,
+                rawDate: cy.endDate
+              });
+            }
+          }
+        });
+      } else {
+        // Fallback for contracts not explicitly divided into years
+        const startDt = new Date(contract.startDate + 'T00:00:00');
+        const endDt = new Date(contract.endDate + 'T23:59:59');
+        
+        const contractReports = reports.filter(r => {
+          if (r.contractId !== contract.id) return false;
+          const reportDate = new Date(r.year, r.month - 1, 15);
+          return reportDate >= startDt && reportDate <= endDt;
+        });
+        
+        const totalRoyalty = contractReports.reduce((sum, r) => sum + (r.royaltyValue || 0), 0);
+        const totalMG = (contract.mgInstallments || []).reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
+        
+        if (totalRoyalty > totalMG + 0.01) {
+          const excess = totalRoyalty - totalMG;
+          const matchingPayment = payments.find(p => 
+            p.contractId === contract.id && 
+            p.type === 'excess' && 
+            !p.installmentNumber
+          );
+
+          list.push({
+            id: `excess-${contract.id}-total`,
+            licenseId: contract.licenseId,
+            contractId: contract.id,
+            type: 'Royalties Excedentes',
+            license: license?.nomelicenciador || '-',
+            contract: contract.contractNumber || contract.id,
+            installmentNumber: '-',
+            year: '-',
+            amount: excess,
+            currency: contract.currency || 'BRL',
+            invoice: matchingPayment?.invoice || '-',
+            dueDate: contract.endDate,
+            status: matchingPayment?.status || 'pending',
+            paymentDate: matchingPayment?.date || '-',
+            documentUrl: matchingPayment?.documentUrl,
+            documentName: matchingPayment?.documentName,
+            rawDate: contract.endDate
+          });
+        }
+      }
+    });
+    
+    // Sort based on user request: Licenciador, Contrato, MG antes de Fundo de marketing, Ano e parcela
+    return list.sort((a, b) => {
+      // 1. Licenciador (A-Z)
+      if (a.license !== b.license) return a.license.localeCompare(b.license);
+      
+      // 2. Contrato (A-Z)
+      const contractA = String(a.contract);
+      const contractB = String(b.contract);
+      if (contractA !== contractB) return contractA.localeCompare(contractB);
+      
+      // 3. Tipo (MG -> Fundo Mkt -> Royalty Excess -> Mkt Excess)
+      const typeOrder: Record<string, number> = {
+        'Mínimo Garantido (MG)': 1,
+        'Fundo de Marketing (CMF)': 2,
+        'Royalties Excedentes': 3,
+        'Fundo de Marketing (CMF) Excedente': 4
+      };
+      const orderA = typeOrder[a.type] || 99;
+      const orderB = typeOrder[b.type] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      
+      // 4. Ano (Ascending)
+      const yearA = isNaN(Number(a.year)) ? 0 : Number(a.year);
+      const yearB = isNaN(Number(b.year)) ? 0 : Number(b.year);
+      if (yearA !== yearB) return yearA - yearB;
+      
+      // 5. Parcela (Ascending)
+      const instA = isNaN(Number(a.installmentNumber)) ? 0 : Number(a.installmentNumber);
+      const instB = isNaN(Number(b.installmentNumber)) ? 0 : Number(b.installmentNumber);
+      return instA - instB;
+    });
+  }, [contracts, payments, reports, licenses]);
+
+  const summaryData = React.useMemo(() => {
+    const filtered = obligations.filter(ob => {
+      if (summaryLicenseIds.length > 0 && !summaryLicenseIds.includes(ob.licenseId || '')) return false;
+      if (summaryContractIds.length > 0 && !summaryContractIds.includes(ob.contractId || '')) return false;
+      if (summaryTypes.length > 0 && !summaryTypes.includes(ob.type || '')) return false;
+      if (summaryStatuses.length > 0 && !summaryStatuses.includes(ob.status || '')) return false;
+
+      if (summaryLineIds.length > 0) {
+        const contract = contracts.find(c => c.id === ob.contractId);
+        if (!contract) return false;
+        const hasMatchingLine = contract.lineIds?.some(lId => summaryLineIds.includes(lId));
+        if (!hasMatchingLine) return false;
+      }
+      return true;
+    });
+
+    const extractDate = (dateStr: string) => {
+      if (!dateStr || dateStr === '-') return { year: 0, month: 0 };
+      
+      // Handle DD/MM/YYYY formats
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          let y = parseInt(parts[2], 10);
+          if (y < 100) y += 2000; // Normalizer 2-digit years to 4-digit
+          return { year: y, month: parseInt(parts[1], 10) };
+        }
+      }
+
+      // Handle YYYY-MM-DD formats
+      if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts.length >= 3 && parts[0].length === 4) {
+          return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) };
+        }
+      }
+
+      // Fallback
+      const dt = new Date(dateStr);
+      if (!isNaN(dt.getTime())) {
+        let y = dt.getFullYear();
+        if (y < 100) y += 2000;
+        return { year: y, month: dt.getMonth() + 1 };
+      }
+
+      return { year: 0, month: 0 };
+    }
+
+    const parsedData = filtered.map(ob => {
+      const dt = extractDate(ob.dueDate || ob.rawDate || ob.paymentDate || '');
+      return {
+        ...ob,
+        parsedYear: dt.year,
+        parsedMonth: dt.month
+      }
+    }).filter(ob => ob.parsedYear > 0 && !isNaN(ob.parsedYear));
+
+    const years = (Array.from(new Set(parsedData.map(ob => ob.parsedYear))) as number[]).sort((a, b) => a - b);
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+
+    const grid: Record<number, Record<number, { total: number, items: any[] }>> = {};
+    years.forEach((y: number) => {
+      grid[y] = {};
+      months.forEach((m: number) => grid[y][m] = { total: 0, items: [] });
+    });
+
+    parsedData.forEach(ob => {
+      if (grid[ob.parsedYear] && grid[ob.parsedYear][ob.parsedMonth]) {
+        grid[ob.parsedYear][ob.parsedMonth].total += Number(ob.amount) || 0;
+        grid[ob.parsedYear][ob.parsedMonth].items.push(ob);
+      }
+    });
+
+    return { years, months, grid };
+  }, [obligations, summaryLicenseIds, summaryContractIds, summaryTypes, summaryStatuses, summaryLineIds, contracts]);
+
+  // Unique years for filters
+  const availableYears = React.useMemo(() => {
+    const years = obligations.map(o => String(o.year)).filter(y => y && y !== '-');
+    return Array.from(new Set(years)).sort();
+  }, [obligations]);
+
+  // Unique types for filters
+  const availableTypes = React.useMemo(() => {
+    const types = obligations.map(o => o.type);
+    return Array.from(new Set(types)).sort();
+  }, [obligations]);
+
+  // Unique invoices for filters
+  const availableInvoices = React.useMemo(() => {
+    const invoices = obligations.map(o => String(o.invoice)).filter(i => i && i !== '-');
+    return Array.from(new Set(invoices)).sort();
+  }, [obligations]);
+
+  // Filtered Obligations
+  const filteredObligations = React.useMemo(() => {
+    return obligations.filter(ob => {
+      // License filter
+      if (obsLicenseIds.length > 0 && !obsLicenseIds.includes(ob.licenseId)) return false;
+      
+      // Contract filter
+      if (obsContractIds.length > 0 && !obsContractIds.includes(ob.contractId)) return false;
+
+      // Year filter
+      if (obsYears.length > 0 && !obsYears.includes(String(ob.year))) return false;
+
+      // Type filter
+      if (obsTypes.length > 0 && !obsTypes.includes(ob.type)) return false;
+
+      // Invoice filter
+      if (obsInvoices.length > 0 && !obsInvoices.includes(String(ob.invoice))) return false;
+
+      // Status filter
+      if (obsStatuses.length > 0 && !obsStatuses.includes(ob.status)) return false;
+
+      // Payment Date filter
+      if (obsPaymentDate && !formatDateBR(ob.paymentDate).includes(obsPaymentDate)) return false;
+
+      return true;
+    });
+  }, [obligations, obsLicenseIds, obsContractIds, obsYears, obsTypes, obsInvoices, obsStatuses, obsPaymentDate]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -6829,6 +8216,16 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
       toast.success('Pagamento confirmado!');
     } catch (err) {
       toast.error('Erro ao confirmar pagamento.');
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este registro de pagamento?')) return;
+    try {
+      await deleteDoc(doc(db, 'payments', paymentId));
+      toast.success('Pagamento excluído com sucesso!');
+    } catch (err) {
+      toast.error('Erro ao excluir pagamento.');
     }
   };
 
@@ -6882,7 +8279,7 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
 
   const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
     <th 
-      className="px-2 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+      className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
       onClick={() => requestSort(sortKey)}
     >
       <div className="flex items-center gap-1">
@@ -6896,34 +8293,411 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
   );
 
   return (
-    <Card className="border-slate-200 shadow-sm">
-      <CardHeader>
-        <CardTitle>Controle de Pagamentos</CardTitle>
-        <CardDescription>Acompanhe parcelas de MG, royalties e fundo de marketing</CardDescription>
-      </CardHeader>
+    <div className="space-y-6">
+      {/* Resumo da Programação */}
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-200">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={18} className="text-blue-600" />
+              <h2 className="text-base font-semibold text-slate-800">Resumo da Programação de Pagamentos</h2>
+            </div>
+            
+            <div className="flex flex-wrap items-end gap-3 w-full">
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Licenciadores</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs bg-white border-slate-200"
+                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  selectedValues={summaryLicenseIds}
+                  onChange={setSummaryLicenseIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Linhas</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs bg-white border-slate-200"
+                  options={lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  selectedValues={summaryLineIds}
+                  onChange={setSummaryLineIds}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Contratos</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs bg-white border-slate-200"
+                  options={contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))}
+                  selectedValues={summaryContractIds}
+                  onChange={setSummaryContractIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Tipo</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs bg-white border-slate-200"
+                  options={availableTypes.map(t => ({ label: t, value: t }))}
+                  selectedValues={summaryTypes}
+                  onChange={setSummaryTypes}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[11px] text-slate-400">Status</Label>
+                <MultiSelectDropdown
+                  className="h-8 text-xs bg-white border-slate-200"
+                  options={[
+                    { label: 'Pago', value: 'paid' },
+                    { label: 'Pendente', value: 'pending' }
+                  ]}
+                  selectedValues={summaryStatuses}
+                  onChange={setSummaryStatuses}
+                  placeholder="Todos"
+                />
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse table-fixed min-w-[1000px]">
+              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Ano</th>
+                  {['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map(m => (
+                    <th key={m} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/12)]">{m}</th>
+                  ))}
+                  <th className="px-3 py-2 text-center w-28">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summaryData.years.map(year => {
+                  let yearTotal = 0;
+                  const rowValues = summaryData.months.map(m => {
+                    const cellData = summaryData.grid[year][m];
+                    const val = cellData?.total || 0;
+                    yearTotal += val;
+                    return (
+                      <td key={m} className="px-1 py-2 text-right border-r border-slate-100 text-slate-600">
+                        {val > 0 ? (
+                          <PortalTooltip 
+                            content={
+                              <>
+                                <div className="bg-slate-900 text-white p-2 text-xs font-semibold text-center">
+                                  Composição ({m < 10 ? `0${m}` : m}/{year})
+                                </div>
+                                <table className="w-full text-left text-[10px] divide-y divide-slate-100">
+                                  <thead className="bg-slate-50 text-slate-500">
+                                    <tr>
+                                      <th className="px-2 py-1.5 font-medium">Licenciador</th>
+                                      <th className="px-2 py-1.5 font-medium">Tipo</th>
+                                      <th className="px-2 py-1.5 font-medium text-center">Parcela</th>
+                                      <th className="px-2 py-1.5 font-medium text-center">Ano</th>
+                                      <th className="px-2 py-1.5 font-medium text-right">Valor</th>
+                                      <th className="px-2 py-1.5 font-medium text-center">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-50">
+                                    {cellData?.items.map((item: any, idx: number) => (
+                                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-2 py-1.5 truncate max-w-[120px]" title={item.license}>{item.license}</td>
+                                        <td className="px-2 py-1.5 truncate max-w-[120px]" title={item.type}>
+                                          {item.type?.includes('Mínimo Garantido') ? 'MG' : 
+                                           item.type?.includes('Fundo de Marketing') ? 'CMF' : 
+                                           item.type}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-center">{item.installmentNumber || '-'}</td>
+                                        <td className="px-2 py-1.5 text-center">{item.year || '-'}</td>
+                                        <td className="px-2 py-1.5 text-right font-medium text-slate-700">
+                                          {(Number(item.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-center">
+                                          <span className={cn("px-1.5 py-0.5 rounded-full text-[9px] uppercase font-bold", item.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>
+                                            {item.status === 'paid' ? 'Pago' : 'Pendente'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </>
+                            }
+                          >
+                            <span className="cursor-help hover:text-blue-600 border-b border-dashed border-blue-300 pb-0.5">
+                              {val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </PortalTooltip>
+                        ) : '-'}
+                      </td>
+                    );
+                  });
+
+                  return (
+                    <React.Fragment key={year}>
+                      <tr className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-3 py-2 border-r border-slate-100 font-semibold text-slate-800 flex items-center justify-center gap-1">
+                          {year}
+                        </td>
+                        {rowValues}
+                        <td className="px-3 py-2 text-right font-bold text-slate-800 bg-slate-50/50">
+                          {yearTotal > 0 ? yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
+                {summaryData.years.length === 0 && (
+                  <tr>
+                    <td colSpan={14} className="px-3 py-8 text-center text-slate-400">
+                      Nenhuma programação de pagamento encontrada para os filtros selecionados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {summaryData.years.length > 0 && (
+                <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800">
+                  <tr>
+                    <td className="px-3 py-3 border-r border-slate-200 text-center">TOTAL GERAL</td>
+                    {summaryData.months.map(m => {
+                      const monthTotal = summaryData.years.reduce((sum, y) => sum + (summaryData.grid[y][m]?.total || 0), 0);
+                      return (
+                        <td key={m} className="px-1 py-3 text-right border-r border-slate-200">
+                          {monthTotal > 0 ? monthTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-3 text-right">
+                      {(() => {
+                         let grandTotal = 0;
+                         summaryData.years.forEach(y => {
+                           summaryData.months.forEach(m => {
+                             grandTotal += summaryData.grid[y][m] || 0;
+                           })
+                         });
+                         return grandTotal > 0 ? grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+                      })()}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 pb-3">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <CardTitle className="text-lg text-slate-800">Cronograma de Obrigações e Parcelas</CardTitle>
+              <CardDescription>Acompanhe as parcelas acordadas em contrato e obrigações geradas por excesso</CardDescription>
+            </div>
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 font-bold">{filteredObligations.length} de {obligations.length} Obrigações</Badge>
+          </div>
+
+          {/* Obligations Filters */}
+          <div className="flex flex-wrap items-end gap-3 w-full animate-in fade-in duration-500">
+            <div className="min-w-[180px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Licenciador</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                selectedValues={obsLicenseIds}
+                onChange={setObsLicenseIds}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[150px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Contratos</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={contracts
+                  .filter(c => obsLicenseIds.length === 0 || obsLicenseIds.includes(c.licenseId))
+                  .map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
+                }
+                selectedValues={obsContractIds}
+                onChange={setObsContractIds}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[150px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Tipo</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={availableTypes.map(t => ({ label: t, value: t }))}
+                selectedValues={obsTypes}
+                onChange={setObsTypes}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[100px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Ano</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={availableYears.map(y => ({ label: y, value: y }))}
+                selectedValues={obsYears}
+                onChange={setObsYears}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[120px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Invoice / NF</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={availableInvoices.map(i => ({ label: i, value: i }))}
+                selectedValues={obsInvoices}
+                onChange={setObsInvoices}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[120px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Status</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs border-slate-200 bg-white"
+                options={[
+                  { label: 'Pago', value: 'paid' },
+                  { label: 'Pendente', value: 'pending' }
+                ]}
+                selectedValues={obsStatuses}
+                onChange={setObsStatuses}
+                placeholder="Todos"
+              />
+            </div>
+
+            <div className="min-w-[120px] flex-1 space-y-1">
+              <Label className="text-[11px] text-slate-400">Data de Pagamento</Label>
+              <div className="relative">
+                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                <Input 
+                  className="h-8 text-xs pl-8 border-slate-200 bg-white"
+                  placeholder="DD/MM/AAAA" 
+                  value={obsPaymentDate}
+                  onChange={(e) => setObsPaymentDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 px-2 text-[10px] text-slate-400 hover:text-red-500"
+              onClick={() => {
+                setObsLicenseIds([]);
+                setObsContractIds([]);
+                setObsYears([]);
+                setObsTypes([]);
+                setObsInvoices([]);
+                setObsStatuses([]);
+                setObsPaymentDate('');
+              }}
+            >
+              Limpar
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                <tr>
+                  <th className="px-4 py-3">Licenciador</th>
+                  <th className="px-4 py-3">Contrato</th>
+                  <th className="px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Nº Parcela</th>
+                  <th className="px-4 py-3">Ano</th>
+                  <th className="px-4 py-3">Valor</th>
+                  <th className="px-4 py-3">Vencimento</th>
+                  <th className="px-4 py-3">Invoice/NF</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3">Data Pgto</th>
+                  <th className="px-4 py-3 text-center">Doc</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredObligations.map((ob: any) => (
+                  <tr key={ob.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">{ob.type}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.installmentNumber}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.year}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
+                      {getCurrencySymbol(ob.currency)} {ob.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(ob.dueDate)}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.invoice}</td>
+                    <td className="px-4 py-3 text-center">
+                      {ob.status === 'paid' ? (
+                        <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[9px]">
+                          <CheckCircle2 size={12} /> PAGO
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1.5 text-amber-600 font-bold text-[9px]">
+                          <AlertCircle size={12} /> PENDENTE
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(ob.paymentDate)}</td>
+                    <td className="px-4 py-3 text-center">
+                      {ob.documentUrl ? (
+                        <a 
+                          href={ob.documentUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="inline-flex items-center justify-center p-1.5 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                          title={`Ver ${ob.documentName || 'documento'}`}
+                        >
+                          <FileDown size={14} />
+                        </a>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {obligations.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400 italic">Nenhuma parcela ou obrigação detectada.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle>Controle de Pagamentos</CardTitle>
+          <CardDescription>Acompanhe parcelas de MG, royalties e fundo de marketing</CardDescription>
+        </CardHeader>
       <CardContent>
         <div className="rounded-md border border-slate-200 overflow-x-auto">
-          <table className="w-full text-[10px] text-left min-w-[1800px]">
-            <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider">
+          <table className="w-full text-sm text-left min-w-[1200px]">
+            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <SortableHeader label="Responsável" sortKey="responsible" />
-                <SortableHeader label="Dt Receb." sortKey="receiptDate" />
-                <SortableHeader label="Dt Solic. Pagto" sortKey="paymentRequestDate" />
                 <SortableHeader label="Tipo" sortKey="type" />
                 <SortableHeader label="Licenciador" sortKey="license" />
                 <SortableHeader label="Contrato" sortKey="contract" />
                 <SortableHeader label="Identificação" sortKey="identification" />
                 <SortableHeader label="Dt Vencimento" sortKey="dueDate" />
                 <SortableHeader label="Dt Pagamento" sortKey="date" />
-                <SortableHeader label="Moeda" sortKey="currency" />
                 <SortableHeader label="Valor" sortKey="amount" />
-                <SortableHeader label="Ordem Pagto" sortKey="paymentOrder" />
                 <SortableHeader label="Invoice / NF" sortKey="invoice" />
-                <SortableHeader label="Observações" sortKey="notes" />
-                <SortableHeader label="Ano" sortKey="year" />
-                <SortableHeader label="Parcela" sortKey="installmentNumber" />
                 <SortableHeader label="Status" sortKey="status" />
-                {isAdmin && <th className="px-2 py-3 text-right">Ações</th>}
+                <th className="px-4 py-3 text-center">Doc</th>
+                {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -6933,46 +8707,49 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
                 const symbol = getCurrencySymbol(payment.currency || contract?.currency || 'BRL');
                 
                 return (
-                  <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-2 py-4 text-slate-600">{payment.responsible || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{formatDateBR(payment.receiptDate)}</td>
-                    <td className="px-2 py-4 text-slate-600">{formatDateBR(payment.paymentRequestDate)}</td>
-                    <td className="px-2 py-4">
-                      <Badge variant="outline" className="capitalize text-[8px] font-bold">
+                    <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">
                         {payment.type === 'mg' ? 'MG' : 
                          payment.type === 'excess' ? 'Royalties' : 
                          payment.type === 'marketing' ? 'Marketing' : 'Outros'}
-                      </Badge>
-                    </td>
-                  <td className="px-2 py-4 font-medium text-slate-900 truncate max-w-[120px]" title={license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : '')}>
-                    {license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-'))}
-                  </td>
-                    <td className="px-2 py-4 text-slate-600">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-'))}</td>
-                    <td className="px-2 py-4 text-slate-600 truncate max-w-[100px]" title={payment.identification}>
-                      {payment.identification || '-'}
-                    </td>
-                    <td className="px-2 py-4 text-slate-600">{formatDateBR(payment.dueDate)}</td>
-                    <td className="px-2 py-4 text-slate-600">{formatDateBR(payment.date)}</td>
-                    <td className="px-2 py-4 text-slate-600 font-bold">{payment.currency || 'BRL'}</td>
-                    <td className="px-2 py-4 font-bold text-slate-900">
-                      {symbol} {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-2 py-4 text-slate-600">{payment.paymentOrder || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{payment.invoice || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600 max-w-[120px] truncate" title={payment.notes}>
-                      {payment.notes || '-'}
-                    </td>
-                    <td className="px-2 py-4 text-slate-600">{payment.year || '-'}</td>
-                    <td className="px-2 py-4 text-slate-600">{payment.installmentNumber || '-'}</td>
-                    <td className="px-2 py-4">
-                      {payment.status === 'paid' ? (
-                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none text-[8px] font-bold">PAGO</Badge>
-                      ) : (
-                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none text-[8px] font-bold">PENDENTE</Badge>
-                      )}
-                    </td>
+                      </td>
+                      <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : '')}>
+                        {license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-'))}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-'))}</td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600 truncate max-w-[100px]" title={payment.identification}>
+                        {payment.identification || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(payment.dueDate)}</td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(payment.date)}</td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
+                        {symbol} {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600">{payment.invoice || '-'}</td>
+                      <td className="px-4 py-3 text-[13px]">
+                        {payment.status === 'paid' ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none text-[8px] font-bold">PAGO</Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none text-[8px] font-bold">PENDENTE</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {payment.documentUrl ? (
+                          <a 
+                            href={payment.documentUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="inline-flex items-center justify-center p-1.5 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                            title={`Baixar ${payment.documentName || 'documento'}`}
+                          >
+                            <FileDown size={14} />
+                          </a>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
                     {isAdmin && (
-                      <td className="px-2 py-4 text-right">
+                      <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {payment.status === 'pending' && (
                             <Button 
@@ -6985,6 +8762,13 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
                             </Button>
                           )}
                           <EditPaymentDialog payment={payment} contracts={contracts} licenses={licenses} />
+                          <button 
+                            onClick={() => handleDeletePayment(payment.id)}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                            title="Excluir Pagamento"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     )}
@@ -6993,7 +8777,7 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
               })}
               {payments.length === 0 && (
                 <tr>
-                  <td colSpan={18} className="px-4 py-8 text-center text-slate-400">Nenhum pagamento registrado.</td>
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-400">Nenhum pagamento registrado.</td>
                 </tr>
               )}
             </tbody>
@@ -7001,6 +8785,7 @@ function PaymentsView({ payments, contracts, licenses, isAdmin }: {
         </div>
       </CardContent>
     </Card>
+  </div>
   );
 }
 
