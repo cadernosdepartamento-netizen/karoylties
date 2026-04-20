@@ -24,6 +24,8 @@ import {
   Calendar,
   X,
   Building2,
+  Trash2,
+  Edit,
   PackageSearch,
   Database,
   Eye,
@@ -32,7 +34,6 @@ import {
   Package,
   Upload,
   FileSpreadsheet,
-  Trash2,
   ExternalLink,
   ArrowUpDown,
   ChevronUp,
@@ -374,6 +375,7 @@ function MainApp() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSalesExpanded, setIsSalesExpanded] = useState(false);
 
   // Data States
   const [licenses, setLicenses] = useState<License[]>([]);
@@ -384,13 +386,16 @@ function MainApp() {
   const [reports, setReports] = useState<RoyaltyReport[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [netSales, setNetSales] = useState<Sale[]>([]);
+  const [wholeSales, setWholeSales] = useState<Sale[]>([]);
+  const [fobSales, setFobSales] = useState<Sale[]>([]);
 
   // Sales Action States
   const [isDeletingSales, setIsDeletingSales] = useState(false);
   const [deleteSalesProgress, setDeleteSalesProgress] = useState(0);
   const [showConfirmDeleteSales, setShowConfirmDeleteSales] = useState(false);
 
-  const handleClearAllSales = async () => {
+  const handleClearAllData = async (collectionName: string, dataArray: any[]) => {
     setShowConfirmDeleteSales(false);
     setIsDeletingSales(true);
     setDeleteSalesProgress(0);
@@ -398,8 +403,8 @@ function MainApp() {
     await new Promise(resolve => setTimeout(resolve, 100));
     
     try {
-      const totalSales = sales.length;
-      if (totalSales === 0) {
+      const totalItems = dataArray.length;
+      if (totalItems === 0) {
         setIsDeletingSales(false);
         return;
       }
@@ -409,9 +414,9 @@ function MainApp() {
       let currentBatch = writeBatch(db);
       let opCount = 0;
 
-      for (const sale of sales) {
-        if (!sale.id) continue;
-        currentBatch.delete(doc(db, 'sales', sale.id));
+      for (const item of dataArray) {
+        if (!item.id) continue;
+        currentBatch.delete(doc(db, collectionName, item.id));
         opCount++;
 
         if (opCount === batchSize) {
@@ -429,14 +434,14 @@ function MainApp() {
       for (let i = 0; i < batches.length; i++) {
         await batches[i].commit();
         committedCount += (i === batches.length - 1 && opCount > 0) ? opCount : batchSize;
-        const progress = Math.min(Math.round((committedCount / totalSales) * 100), 100);
+        const progress = Math.min(Math.round((committedCount / totalItems) * 100), 100);
         setDeleteSalesProgress(progress);
       }
 
-      toast.success(`${totalSales} vendas foram apagadas da base.`);
+      toast.success(`${totalItems} registros foram apagados da base.`);
     } catch (error) {
-      console.error("Erro ao apagar vendas:", error);
-      toast.error("Houve um erro ao apagar as vendas da base de dados.");
+      console.error("Erro ao apagar registros:", error);
+      toast.error("Houve um erro ao apagar os registros da base de dados.");
     } finally {
       setIsDeletingSales(false);
       setDeleteSalesProgress(0);
@@ -501,6 +506,18 @@ function MainApp() {
       setSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'sales'));
 
+    const unsubNetSales = onSnapshot(collection(db, 'netsales'), (snap) => {
+      setNetSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'netsales'));
+
+    const unsubWholeSales = onSnapshot(collection(db, 'wholesales'), (snap) => {
+      setWholeSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'wholesales'));
+
+    const unsubFobSales = onSnapshot(collection(db, 'fobsales'), (snap) => {
+      setFobSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'fobsales'));
+
     return () => {
       unsubLicenses();
       unsubLines();
@@ -510,6 +527,9 @@ function MainApp() {
       unsubReports();
       unsubPayments();
       unsubSales();
+      unsubNetSales();
+      unsubWholeSales();
+      unsubFobSales();
     };
   }, [user]);
 
@@ -567,12 +587,23 @@ function MainApp() {
               active={activeTab === 'products'} 
               onClick={() => setActiveTab('products')} 
             />
-            <SidebarItem 
-              icon={<TrendingUp size={20} />} 
-              label="Vendas" 
-              active={activeTab === 'sales'} 
-              onClick={() => setActiveTab('sales')} 
-            />
+            <SidebarDropdown 
+                icon={<TrendingUp size={20} />} 
+                label="Vendas" 
+                active={activeTab.startsWith('sales')} 
+                isOpen={isSalesExpanded}
+                onClick={() => {
+                  setIsSalesExpanded(!isSalesExpanded);
+                  if (activeTab !== 'sales') {
+                     setActiveTab('sales');
+                  }
+                }}
+            >
+                <SidebarSubItem label="Vendas líquidas" active={activeTab === 'sales_liquidas'} onClick={() => setActiveTab('sales_liquidas')} />
+                <SidebarSubItem label="Compras líquidas" active={activeTab === 'sales_compras'} onClick={() => setActiveTab('sales_compras')} />
+                <SidebarSubItem label="FOB" active={activeTab === 'sales_fob'} onClick={() => setActiveTab('sales_fob')} />
+            </SidebarDropdown>
+                
             <SidebarItem 
               icon={<CircleDollarSign size={20} />} 
               label="Royalties" 
@@ -638,6 +669,9 @@ function MainApp() {
               {activeTab === 'lines' && 'Linhas'}
               {activeTab === 'products' && 'Produtos'}
               {activeTab === 'sales' && 'Vendas'}
+              {activeTab === 'sales_liquidas' && 'Vendas líquidas'}
+              {activeTab === 'sales_compras' && 'Compras líquidas'}
+              {activeTab === 'sales_fob' && 'FOB'}
               {activeTab === 'reports' && 'Royalties'}
               {activeTab === 'payments' && 'Pagamentos'}
             </h1>
@@ -650,9 +684,9 @@ function MainApp() {
                 />
               </div>
 
-              {activeTab === 'sales' && (
+              {(activeTab === 'sales' || activeTab === 'sales_liquidas' || activeTab === 'sales_compras' || activeTab === 'sales_fob') && (
                 <div className="flex items-center gap-2">
-                  {isAdmin && sales.length > 0 && (
+                  {isAdmin && (
                     <Dialog open={showConfirmDeleteSales} onOpenChange={setShowConfirmDeleteSales}>
                       <DialogTrigger 
                         className={cn(buttonVariants({ variant: "destructive" }), "gap-2 h-9 px-3")}
@@ -679,16 +713,26 @@ function MainApp() {
                         </DialogHeader>
                         <div className="py-4 space-y-2 text-slate-600">
                           <p className="font-semibold text-slate-900">Esta ação é irreversível.</p>
-                          <p>Você tem certeza que deseja apagar absolutamente <span className="font-bold underline">todas as {sales.length} vendas</span> da base de dados?</p>
+                          <p>Você tem certeza que deseja apagar absolutamente toda a base de dados?</p>
                         </div>
                         <DialogFooter className="gap-2 sm:gap-0">
                           <Button variant="outline" onClick={() => setShowConfirmDeleteSales(false)}>Cancelar</Button>
-                          <Button variant="destructive" onClick={handleClearAllSales}>Sim, Apagar Tudo</Button>
+                          <Button variant="destructive" onClick={() => {
+                             if (activeTab === 'sales') handleClearAllData('sales', sales);
+                             else if (activeTab === 'sales_liquidas') handleClearAllData('netsales', netSales);
+                             else if (activeTab === 'sales_compras') handleClearAllData('wholesales', wholeSales);
+                             else if (activeTab === 'sales_fob') handleClearAllData('fobsales', fobSales);
+                          }}>Sim, Apagar Tudo</Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
                   )}
-                  <ImportSalesDialog products={products} />
+                  <ImportSalesDialog products={products} buttonText={activeTab === 'sales_compras' ? 'Importar Compras' : activeTab === 'sales_fob' ? 'Importar Compras FOB' : 'Importar Vendas'} collectionName={
+                      activeTab === 'sales' ? 'sales' : 
+                      activeTab === 'sales_liquidas' ? 'netsales' : 
+                      activeTab === 'sales_compras' ? 'wholesales' :
+                      activeTab === 'sales_fob' ? 'fobsales' : 'sales'
+                  } />
                 </div>
               )}
               
@@ -743,7 +787,10 @@ function MainApp() {
             {activeTab === 'licenses' && <LicensorsView licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'lines' && <LinesView lines={lines} licenses={licenses} contracts={contracts} products={products} categories={productCategories} isAdmin={isAdmin} />}
             {activeTab === 'products' && <ProductsView products={products} lines={lines} categories={productCategories} licenses={licenses} isAdmin={isAdmin} />}
-            {activeTab === 'sales' && <SalesView sales={sales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
+            {activeTab === 'sales' && <SalesView activeTab="sales" sales={sales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
+            {activeTab === 'sales_liquidas' && <SalesView activeTab="sales_liquidas" sales={netSales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
+            {activeTab === 'sales_compras' && <SalesView activeTab="sales_compras" sales={wholeSales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
+            {activeTab === 'sales_fob' && <SalesView activeTab="sales_fob" sales={fobSales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
             {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
             {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} lines={lines} reports={reports} isAdmin={isAdmin} />}
             {activeTab === 'settings' && <SettingsView currentUser={user} isAdmin={isAdmin} />}
@@ -983,6 +1030,43 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
       }`}
     >
       {icon}
+      {label}
+    </button>
+  );
+}
+
+function SidebarDropdown({ icon, label, active, isOpen, onClick, children }: { icon: React.ReactNode, label: string, active: boolean, isOpen: boolean, onClick: () => void, children: React.ReactNode }) {                
+  return (
+    <>
+      <button
+        onClick={onClick}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+        active 
+          ? 'bg-blue-50 text-blue-700' 
+          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+      }`}
+      >
+        {icon}
+        {label}
+        <div className="ml-auto">
+            {isOpen ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+        </div>
+      </button>
+      {isOpen && <div className="space-y-1">{children}</div>}
+    </>
+  );
+}
+
+function SidebarSubItem({ label, active, onClick }: { label: string, active: boolean, onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 pl-11 pr-3 py-2 rounded-lg text-sm font-medium transition-all ${
+        active 
+          ? 'text-blue-700 bg-blue-50' 
+          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+      }`}
+    >
       {label}
     </button>
   );
@@ -5696,12 +5780,10 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
   }, [sortConfig]);
 
   const SortIcon = ({ column }: { column: string }) => {
-    return (
-      <div className="flex flex-col ml-1">
-        <ChevronUp size={10} className={sortConfig.key === column && sortConfig.direction === 'asc' ? 'text-blue-600' : 'text-slate-300'} />
-        <ChevronDown size={10} className={sortConfig.key === column && sortConfig.direction === 'desc' ? 'text-blue-600' : 'text-slate-300'} />
-      </div>
-    );
+    if (sortConfig.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
+    if (sortConfig.direction === 'asc') return <ChevronUp size={12} className="ml-1 text-blue-600" />;
+    if (sortConfig.direction === 'desc') return <ChevronDown size={12} className="ml-1 text-blue-600" />;
+    return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
   };
 
   return (
@@ -5908,15 +5990,22 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
   );
 }
 
-function SalesView({ sales, licenses, lines, categories, products, contracts, isAdmin }: {
+function SalesView({ sales, licenses, lines, categories, products, contracts, isAdmin, activeTab }: {
   sales: Sale[],
   licenses: License[],
   lines: Line[],
   categories: ProductCategory[],
   products: Product[],
   contracts: Contract[],
-  isAdmin: boolean
+  isAdmin: boolean,
+  activeTab: string
 }) {
+  const collectionName = {
+    'sales': 'sales',
+    'sales_liquidas': 'netsales',
+    'sales_compras': 'wholesales',
+    'sales_fob': 'fobsales'
+  }[activeTab] || 'sales';
   const [selectedLicenses, setSelectedLicenses] = useState<string[]>([]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -5924,6 +6013,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
   const [selectedSkus, setSelectedSkus] = useState<string[]>([]);
   const [selectedSaleMonths, setSelectedSaleMonths] = useState<string[]>([]);
   const [selectedSaleYears, setSelectedSaleYears] = useState<string[]>([]);
+  const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState<number>(50);
 
   // Sales Summary State
@@ -6545,23 +6635,54 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
             </div>
           </div>
 
-          {(selectedLicenses.length > 0 || selectedLines.length > 0 || selectedCategories.length > 0 || selectedYears.length > 0 || selectedSkus.length > 0 || selectedSaleMonths.length > 0 || selectedSaleYears.length > 0) && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="mt-4 text-blue-600 h-7 text-xs"
-              onClick={() => {
-                setSelectedLicenses([]);
-                setSelectedLines([]);
-                setSelectedCategories([]);
-                setSelectedYears([]);
-                setSelectedSkus([]);
-                setSelectedSaleMonths([]);
-                setSelectedSaleYears([]);
-              }}
-            >
-              <X size={14} className="mr-1" /> Limpar Filtros
-            </Button>
+          {(selectedLicenses.length > 0 || selectedLines.length > 0 || selectedCategories.length > 0 || selectedYears.length > 0 || selectedSkus.length > 0 || selectedSaleMonths.length > 0 || selectedSaleYears.length > 0 || selectedSales.length > 0) && (
+            <div className="flex flex-row justify-between items-center mt-4 w-full">
+              <div>
+                {(selectedLicenses.length > 0 || selectedLines.length > 0 || selectedCategories.length > 0 || selectedYears.length > 0 || selectedSkus.length > 0 || selectedSaleMonths.length > 0 || selectedSaleYears.length > 0) && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-blue-600 h-7 text-xs"
+                    onClick={() => {
+                      setSelectedLicenses([]);
+                      setSelectedLines([]);
+                      setSelectedCategories([]);
+                      setSelectedYears([]);
+                      setSelectedSkus([]);
+                      setSelectedSaleMonths([]);
+                      setSelectedSaleYears([]);
+                    }}
+                  >
+                    <X size={14} className="mr-1" /> Limpar Filtros
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedSales.length > 0 && viewMode === 'individual' && (
+                  <>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-2">
+                      <Edit size={14} /> Editar {selectedSales.length} Selecionados
+                    </Button>
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="h-7 text-xs gap-2"
+                      onClick={async () => {
+                        if (confirm(`Tem certeza que deseja apagar ${selectedSales.length} venda(s) selecionada(s)?`)) {
+                          const batch = writeBatch(db);
+                          selectedSales.forEach(id => batch.delete(doc(db, collectionName, id)));
+                          await batch.commit();
+                          setSelectedSales([]);
+                          toast.success(`${selectedSales.length} vendas apagadas.`);
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} /> Apagar {selectedSales.length} Selecionados
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
           )}
             </div>
           </div>
@@ -6571,6 +6692,17 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
+                  <th className="px-4 py-3 w-4">
+                    <input 
+                      type="checkbox"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={selectedSales.length === filteredSales.length && filteredSales.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedSales(filteredSales.map(s => s.id));
+                        else setSelectedSales([]);
+                      }}
+                    />
+                  </th>
                   {viewMode === 'grouped' && <th className="px-4 py-3">Mês/Ano</th>}
                   {viewMode === 'individual' && <th className="px-4 py-3">Data</th>}
                   <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
@@ -6588,6 +6720,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 {viewMode === 'grouped' ? (
                   groupedSales.slice(0, pageSize).map((group) => (
                     <tr key={group.sku + group.month + group.year} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3"></td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.month}/{group.year}</td>
                       <td className="px-4 py-2 text-center">
                         {(() => {
@@ -6618,12 +6751,23 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     </tr>
                   ))
                 ) : (
-                  filteredSales.slice(0, pageSize).map((sale, idx) => {
+                  filteredSales.slice(0, pageSize).map((sale) => {
                     const totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
                     const totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
                     
                     return (
-                    <tr key={`${sale.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                    <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-2">
+                        <input 
+                          type="checkbox"
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedSales.includes(sale.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedSales([...selectedSales, sale.id]);
+                            else setSelectedSales(selectedSales.filter(id => id !== sale.id));
+                          }}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{formatDateBR(sale.date)}</td>
                       <td className="px-4 py-2 text-center">
                         {(() => {
@@ -6664,7 +6808,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 )}
                 {filteredSales.length === 0 && (
                   <tr>
-                    <td colSpan={viewMode === 'grouped' ? 9 : 7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={viewMode === 'grouped' ? 10 : 8} className="px-4 py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <PackageSearch size={32} strokeWidth={1.5} />
                         <p>Nenhuma venda encontrada para os filtros selecionados.</p>
@@ -8329,18 +8473,17 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
     return 0;
   }), [payments, sortConfig, contracts, licenses]);
 
-const SortableHeader = ({ label, sortKey, sortConfig, requestSort }: { label: string, sortKey: string, sortConfig: any, requestSort: any }) => (
+  const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
     <th 
       className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
       onClick={() => requestSort(sortKey)}
     >
       <div className="flex items-center gap-1">
         {label}
-        {sortConfig?.key === sortKey ? (
-            sortConfig.direction === 'asc' ? <ChevronUp size={14} className="text-blue-600" /> : <ChevronDown size={14} className="text-blue-600"/>
-        ) : (
-            <ChevronUp size={14} className="text-slate-300" />
-        )}
+        <ArrowUpDown size={12} className={`
+          ${sortConfig?.key === sortKey ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-500'} 
+          transition-colors
+        `} />
       </div>
     </th>
   );
@@ -8678,8 +8821,8 @@ const SortableHeader = ({ label, sortKey, sortConfig, requestSort }: { label: st
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredObligations.map((ob: any, idx: number) => (
-                  <tr key={`${ob.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                {filteredObligations.map((ob: any) => (
+                  <tr key={ob.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">{ob.type}</td>
@@ -8740,27 +8883,27 @@ const SortableHeader = ({ label, sortKey, sortConfig, requestSort }: { label: st
           <table className="w-full text-sm text-left min-w-[1200px]">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <SortableHeader label="Tipo" sortKey="type" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Licenciador" sortKey="license" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Contrato" sortKey="contract" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Identificação" sortKey="identification" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Dt Vencimento" sortKey="dueDate" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Dt Pagamento" sortKey="date" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Valor" sortKey="amount" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Invoice / NF" sortKey="invoice" sortConfig={sortConfig} requestSort={requestSort} />
-                <SortableHeader label="Status" sortKey="status" sortConfig={sortConfig} requestSort={requestSort} />
+                <SortableHeader label="Tipo" sortKey="type" />
+                <SortableHeader label="Licenciador" sortKey="license" />
+                <SortableHeader label="Contrato" sortKey="contract" />
+                <SortableHeader label="Identificação" sortKey="identification" />
+                <SortableHeader label="Dt Vencimento" sortKey="dueDate" />
+                <SortableHeader label="Dt Pagamento" sortKey="date" />
+                <SortableHeader label="Valor" sortKey="amount" />
+                <SortableHeader label="Invoice / NF" sortKey="invoice" />
+                <SortableHeader label="Status" sortKey="status" />
                 <th className="px-4 py-3 text-center">Doc</th>
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {sortedPayments.map((payment: any, idx: number) => {
+              {sortedPayments.map((payment: any) => {
                 const contract = contracts.find((c: any) => c.id === payment.contractId);
                 const license = licenses.find((l: any) => l.id === (payment.licenseId || contract?.licenseId));
                 const symbol = getCurrencySymbol(payment.currency || contract?.currency || 'BRL');
                 
                 return (
-                    <tr key={`${payment.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                    <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">
                         {payment.type === 'mg' ? 'MG' : 
                          payment.type === 'excess' ? 'Royalties' : 

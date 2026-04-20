@@ -136,6 +136,9 @@
     "/payments": { "schema": "Payment", "description": "Coleção de pagamentos" },
     "/productCategories": { "schema": "ProductCategory", "description": "Coleção de categorias de produtos" },
     "/users": { "schema": "User", "description": "Coleção de perfis de usuários" },
-    "/sales": { "schema": "Sale", "description": "Coleção de vendas externas" }
+    "/sales": { "schema": "Sale", "description": "Coleção de vendas externas" },
+    "/netsales": { "schema": "Sale", "description": "Coleção de vendas líquidas" },
+    "/wholesales": { "schema": "Sale", "description": "Coleção de compras líquidas" },
+    "/fobsales": { "schema": "Sale", "description": "Coleção de vendas FOB" }
   }
 }

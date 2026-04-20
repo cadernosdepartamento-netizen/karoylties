@@ -22,7 +22,7 @@ interface Product {
   costPrice?: number;
 }
 
-export function ImportSalesDialog({ products }: { products: Product[] }) {
+export function ImportSalesDialog({ products, collectionName = 'sales', buttonText = 'Importar Vendas' }: { products: Product[], collectionName?: string, buttonText?: string }) {
   const [open, setOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -243,7 +243,7 @@ export function ImportSalesDialog({ products }: { products: Product[] }) {
         for (const b of batches) {
           const batch = writeBatch(db);
           b.forEach(docData => {
-            const docRef = doc(collection(db, 'sales'));
+            const docRef = doc(collection(db, collectionName));
             batch.set(docRef, docData);
             importedCount++;
           });
@@ -314,7 +314,7 @@ export function ImportSalesDialog({ products }: { products: Product[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger className={buttonVariants({ variant: "outline", className: "gap-2" })}>
-          <Upload size={16} /> Importar Vendas
+          <Upload size={16} /> {buttonText}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
