@@ -84,6 +84,8 @@ import { BatchDeleteProductsDialog } from './components/BatchDeleteProductsDialo
 import { MultiSelectDropdown } from './components/MultiSelectDropdown';
 import { ImportSalesDialog } from './components/ImportSalesDialog';
 import { SearchableSelect } from './components/SearchableSelect';
+import { useSortableData } from './hooks/useSortableData';
+import { SortableHeader } from './components/SortableHeader';
 
 // Utility to safely handle different date formats from Excel/Firestore
 const getSafeDate = (dateVal: string | number) => {
@@ -5942,7 +5944,6 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
 }) {
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [viewType, setViewType] = useState<'cards' | 'table'>('cards');
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' | null }>({ key: 'license', direction: 'asc' });
 
   const processedContracts = React.useMemo(() => contracts.map((contract: any) => {
     const statusInfo = getContractStatus(contract);
@@ -5972,74 +5973,7 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
     return c.calculatedStatus === statusFilter;
   }), [processedContracts, statusFilter]);
 
-  const sortedContracts = React.useMemo(() => [...filteredContracts].sort((a, b) => {
-    if (!sortConfig.key || !sortConfig.direction) return 0;
-
-    let valA: any;
-    let valB: any;
-
-    switch (sortConfig.key) {
-      case 'license':
-        valA = a.licenseName;
-        valB = b.licenseName;
-        break;
-      case 'status':
-        valA = a.calculatedStatus;
-        valB = b.calculatedStatus;
-        break;
-      case 'startDate':
-        valA = a.startDate ? new Date(a.startDate).getTime() : 0;
-        valB = b.startDate ? new Date(b.startDate).getTime() : 0;
-        break;
-      case 'endDate':
-        valA = a.endDate ? new Date(a.endDate).getTime() : 0;
-        valB = b.endDate ? new Date(b.endDate).getTime() : 0;
-        break;
-      case 'sellOffEndDate':
-        valA = a.sellOffEndDate ? new Date(a.sellOffEndDate).getTime() : 0;
-        valB = b.sellOffEndDate ? new Date(b.sellOffEndDate).getTime() : 0;
-        break;
-      case 'currency':
-        valA = a.currency || '';
-        valB = b.currency || '';
-        break;
-      case 'mg':
-        valA = a.minimumGuarantee;
-        valB = b.minimumGuarantee;
-        break;
-      case 'royalties':
-        valA = a.totalRoyalties;
-        valB = b.totalRoyalties;
-        break;
-      case 'balance':
-        valA = a.balance;
-        valB = b.balance;
-        break;
-      default:
-        return 0;
-    }
-
-    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  }), [filteredContracts, sortConfig]);
-
-  const handleSort = React.useCallback((key: string) => {
-    let direction: 'asc' | 'desc' | null = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
-      direction = null;
-    }
-    setSortConfig({ key, direction });
-  }, [sortConfig]);
-
-  const SortIcon = ({ column }: { column: string }) => {
-    if (sortConfig.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
-    if (sortConfig.direction === 'asc') return <ChevronUp size={12} className="ml-1 text-blue-600" />;
-    if (sortConfig.direction === 'desc') return <ChevronDown size={12} className="ml-1 text-blue-600" />;
-    return <ArrowUpDown size={12} className="ml-1 opacity-40" />;
-  };
+  const { items: sortedContracts, requestSort, sortConfig } = useSortableData(filteredContracts, { key: 'licenseName', direction: 'asc' });
 
   return (
     <div className="space-y-6">
@@ -6112,62 +6046,71 @@ function ContractsView({ contracts, licenses, reports, lines, products, payments
               <table className="w-full text-sm text-left min-w-[1000px] border-separate border-spacing-0">
                 <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 sticky top-0 z-30">
                   <tr>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider sticky left-0 z-40 bg-slate-50 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('license')}
-                    >
-                      <div className="flex items-center">Licenciador <SortIcon column="license" /></div>
-                    </th>
+                    <SortableHeader 
+                      label="Licenciador" 
+                      sortKey="licenseName" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="sticky left-0 z-40 shadow-[1px_0_0_0_rgba(0,0,0,0.1)] py-3 text-[10px] uppercase tracking-wider" 
+                    />
                     <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">ID Contrato</th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('status')}
-                    >
-                      <div className="flex items-center">Status <SortIcon column="status" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('startDate')}
-                    >
-                      <div className="flex items-center">Início <SortIcon column="startDate" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('endDate')}
-                    >
-                      <div className="flex items-center">Término <SortIcon column="endDate" /></div>
-                    </th>
+                    <SortableHeader 
+                      label="Status" 
+                      sortKey="calculatedStatus" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="Início" 
+                      sortKey="startDate" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="Término" 
+                      sortKey="endDate" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
                     <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">Sell-off (Per.)</th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('sellOffEndDate')}
-                    >
-                      <div className="flex items-center">Sell-off (Fim) <SortIcon column="sellOffEndDate" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('currency')}
-                    >
-                      <div className="flex items-center">Moeda <SortIcon column="currency" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('mg')}
-                    >
-                      <div className="flex items-center">MG <SortIcon column="mg" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('royalties')}
-                    >
-                      <div className="flex items-center">Royalties <SortIcon column="royalties" /></div>
-                    </th>
-                    <th 
-                      className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
-                      onClick={() => handleSort('balance')}
-                    >
-                      <div className="flex items-center">Saldo <SortIcon column="balance" /></div>
-                    </th>
+                    <SortableHeader 
+                      label="Sell-off (Fim)" 
+                      sortKey="sellOffEndDate" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="Moeda" 
+                      sortKey="currency" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="MG" 
+                      sortKey="minimumGuarantee" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="Royalties" 
+                      sortKey="totalRoyalties" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
+                    <SortableHeader 
+                      label="Saldo" 
+                      sortKey="balance" 
+                      currentSort={sortConfig} 
+                      onSort={requestSort} 
+                      className="py-3 text-[10px] uppercase tracking-wider" 
+                    />
                     <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 1</th>
                     <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Vendas 2</th>
                     <th className="px-3 py-3 text-[10px] uppercase tracking-wider bg-slate-50">% roy. Compras</th>
@@ -6420,6 +6363,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
           description: s.description,
           month: m,
           year: y,
+          dateSort: `${y}-${m}`,
           quantity: 0,
           totalValue: 0,
           totalTaxes: 0,
@@ -6453,14 +6397,45 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
       g.netValue += saleNetValue;
       g.count++;
     });
-    return Array.from(groups.values()).sort((a, b) => {
-        if (a.year !== b.year) return Number(b.year) - Number(a.year);
-        if (a.month !== b.month) return Number(b.month) - Number(a.month);
-        return a.sku.localeCompare(b.sku);
-    });
+    return Array.from(groups.values());
   }, [filteredSales, activeTab, currencyView]);
 
   const [viewMode, setViewMode] = useState<'grouped' | 'individual'>('grouped');
+
+  const individualSalesWithCalculatedFields = React.useMemo(() => {
+    return filteredSales.map(sale => {
+      const isFob = activeTab === 'sales_fob';
+      const suffix = isFob ? (currencyView === 'usd' ? '_usd' : '_brl') : '';
+      
+      let unitPriceField = 0;
+      let totalValueField = 0;
+      let totalTaxesField = 0;
+      let netValueField = 0;
+
+      if (isFob) {
+        unitPriceField = Number(sale[`valor_unitario${suffix}`]) || 0;
+        totalValueField = Number(sale[`valor_total${suffix}`]) || 0;
+        totalTaxesField = (Number(sale[`icms${suffix}`]) || 0) + (Number(sale[`pis${suffix}`]) || 0) + (Number(sale[`cofins${suffix}`]) || 0) + (Number(sale[`ipi${suffix}`]) || 0);
+        netValueField = Number(sale[`valor_liquido${suffix}`]) || 0;
+      } else {
+        unitPriceField = sale.unitPrice || 0;
+        totalValueField = sale.totalValue || 0;
+        totalTaxesField = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
+        netValueField = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalTaxesField);
+      }
+
+      return {
+        ...sale,
+        unitPriceField,
+        totalValueField,
+        totalTaxesField,
+        netValueField
+      };
+    });
+  }, [filteredSales, activeTab, currencyView]);
+
+  const { items: sortedGroupedSales, requestSort: requestGroupedSort, sortConfig: groupedSortConfig } = useSortableData(groupedSales, { key: 'dateSort', direction: 'desc' });
+  const { items: sortedIndividualSales, requestSort: requestIndividualSort, sortConfig: individualSortConfig } = useSortableData(individualSalesWithCalculatedFields, { key: 'date', direction: 'desc' });
 
   const salesSummaryData = React.useMemo(() => {
     const filtered = sales.filter(s => {
@@ -6972,28 +6947,48 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       }}
                     />
                   </th>
-                  {viewMode === 'grouped' && <th className="px-4 py-3">Mês/Ano</th>}
-                  {viewMode === 'individual' && <th className="px-4 py-3">Data</th>}
-                  <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
-                  <th className="px-4 py-3">Código SKU</th>
-                  <th className="px-4 py-3">Descrição</th>
-                  <th className="px-4 py-3">Quantidade</th>
-                  {viewMode === 'individual' && <th className="px-4 py-3 text-right">Valor Unitário</th>}
-                  <th className="px-4 py-3 text-right">Valor Total</th>
-                  <th className="px-4 py-3 text-right">Total Impostos</th>
-                  <th className="px-4 py-3 text-right">Total Líquido</th>
-                  {activeTab === 'sales_fob' && (
+                  {viewMode === 'grouped' ? (
                     <>
-                      <th className="px-4 py-3">Invoice</th>
-                      <th className="px-4 py-3">Fabricante</th>
+                      <SortableHeader label="Mês/Ano" sortKey="dateSort" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
+                      <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
+                      <SortableHeader label="Código SKU" sortKey="sku" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
+                      <SortableHeader label="Descrição" sortKey="description" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
+                      <SortableHeader label="Quantidade" sortKey="quantity" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
+                      <SortableHeader label="Valor Total" sortKey="totalValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
+                      <SortableHeader label="Total Impostos" sortKey="totalTaxes" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
+                      <SortableHeader label="Total Líquido" sortKey="netValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right font-medium" />
+                      {activeTab === 'sales_fob' && (
+                        <>
+                          <th className="px-4 py-3">Invoice</th>
+                          <th className="px-4 py-3">Fabricante</th>
+                        </>
+                      )}
+                      <th className="px-4 py-3 text-center">Registros</th>
+                    </>
+                  ) : (
+                    <>
+                      <SortableHeader label="Data" sortKey="date" currentSort={individualSortConfig} onSort={requestIndividualSort} />
+                      <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
+                      <SortableHeader label="Código SKU" sortKey="sku" currentSort={individualSortConfig} onSort={requestIndividualSort} />
+                      <SortableHeader label="Descrição" sortKey="description" currentSort={individualSortConfig} onSort={requestIndividualSort} />
+                      <SortableHeader label="Quantidade" sortKey="quantity" currentSort={individualSortConfig} onSort={requestIndividualSort} />
+                      <SortableHeader label="Valor Unitário" sortKey="unitPriceField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
+                      <SortableHeader label="Valor Total" sortKey="totalValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
+                      <SortableHeader label="Total Impostos" sortKey="totalTaxesField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
+                      <SortableHeader label="Total Líquido" sortKey="netValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right font-medium" />
+                      {activeTab === 'sales_fob' && (
+                        <>
+                          <th className="px-4 py-3">Invoice</th>
+                          <th className="px-4 py-3">Fabricante</th>
+                        </>
+                      )}
                     </>
                   )}
-                  {viewMode === 'grouped' && <th className="px-4 py-3 text-center">Registros</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {viewMode === 'grouped' ? (
-                  groupedSales.slice(0, pageSize).map((group) => (
+                  sortedGroupedSales.slice(0, pageSize).map((group) => (
                     <tr key={group.sku + group.month + group.year} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3"></td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.month}/{group.year}</td>
@@ -7026,7 +7021,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     </tr>
                   ))
                 ) : (
-                  filteredSales.slice(0, pageSize).map((sale, index) => {
+                  sortedIndividualSales.slice(0, pageSize).map((sale, index) => {
                     const isFob = activeTab === 'sales_fob';
                     const suffix = isFob ? (currencyView === 'usd' ? '_usd' : '_brl') : '';
                     
@@ -8314,8 +8309,6 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
   reports: RoyaltyReport[],
   isAdmin: boolean
 }) {
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
-  
   // Summary Table States
   const [summaryLicenseIds, setSummaryLicenseIds] = useState<string[]>([]);
   const [summaryLineIds, setSummaryLineIds] = useState<string[]>([]);
@@ -8713,13 +8706,22 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
     });
   }, [obligations, obsLicenseIds, obsContractIds, obsYears, obsTypes, obsInvoices, obsStatuses, obsPaymentDate]);
 
-  const requestSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
+  const { items: sortedObligations, requestSort: requestObligationSort, sortConfig: obligationSortConfig } = useSortableData(filteredObligations, { key: 'license', direction: 'asc' });
+
+  const paymentsWithDisplayFields = React.useMemo(() => {
+    return payments.map(payment => {
+      const contract = contracts.find((c: any) => c.id === payment.contractId);
+      const license = licenses.find((l: any) => l.id === (payment.licenseId || contract?.licenseId));
+      return {
+        ...payment,
+        licenseName: license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-')),
+        contractNumber: contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-')),
+        typeDisplay: payment.type === 'mg' ? 'MG' : payment.type === 'excess' ? 'Royalties' : payment.type === 'marketing' ? 'Marketing' : 'Outros'
+      };
+    });
+  }, [payments, contracts, licenses]);
+
+  const { items: sortedPayments, requestSort: requestPaymentSort, sortConfig: paymentSortConfig } = useSortableData(paymentsWithDisplayFields, { key: 'date', direction: 'desc' });
 
   const handleConfirmPayment = async (paymentId: string) => {
     try {
@@ -8742,69 +8744,6 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
       toast.error('Erro ao excluir pagamento.');
     }
   };
-
-  const sortedPayments = React.useMemo(() => [...payments].sort((a: any, b: any) => {
-    if (!sortConfig) {
-      // Default sort: by date descending
-      const dateA = a.date || (a.createdAt && typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate() : 0);
-      const dateB = b.date || (b.createdAt && typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate() : 0);
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
-    }
-
-    let aValue: any;
-    let bValue: any;
-
-    if (sortConfig.key === 'license') {
-      const contractA = contracts.find((c: any) => c.id === a.contractId);
-      const licenseA = licenses.find((l: any) => l.id === (a.licenseId || contractA?.licenseId));
-      const contractB = contracts.find((c: any) => c.id === b.contractId);
-      const licenseB = licenses.find((l: any) => l.id === (b.licenseId || contractB?.licenseId));
-      aValue = licenseA?.nomelicenciador || (a.licenseId || contractA?.licenseId || '');
-      bValue = licenseB?.nomelicenciador || (b.licenseId || contractB?.licenseId || '');
-    } else if (sortConfig.key === 'contract') {
-      const contractA = contracts.find((c: any) => c.id === a.contractId);
-      const contractB = contracts.find((c: any) => c.id === b.contractId);
-      aValue = contractA?.contractNumber || (a.contractId || '');
-      bValue = contractB?.contractNumber || (b.contractId || '');
-    } else {
-      aValue = a[sortConfig.key] || '';
-      bValue = b[sortConfig.key] || '';
-    }
-
-    // Handle numeric values
-    if (typeof aValue === 'number' && typeof bValue === 'number') {
-      return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-    }
-
-    // Handle date strings
-    if (['receiptDate', 'paymentRequestDate', 'dueDate', 'date'].includes(sortConfig.key)) {
-      const dateA = aValue ? new Date(aValue).getTime() : 0;
-      const dateB = bValue ? new Date(bValue).getTime() : 0;
-      return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
-    }
-
-    // Default string comparison
-    const strA = String(aValue).toLowerCase();
-    const strB = String(bValue).toLowerCase();
-    if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  }), [payments, sortConfig, contracts, licenses]);
-
-  const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => (
-    <th 
-      className="px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors group"
-      onClick={() => requestSort(sortKey)}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        <ArrowUpDown size={12} className={`
-          ${sortConfig?.key === sortKey ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-500'} 
-          transition-colors
-        `} />
-      </div>
-    </th>
-  );
 
   return (
     <div className="space-y-6">
@@ -9139,7 +9078,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredObligations.map((ob: any) => (
+                {sortedObligations.map((ob: any) => (
                   <tr key={ob.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
@@ -9201,15 +9140,15 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
           <table className="w-full text-sm text-left min-w-[1200px]">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
               <tr>
-                <SortableHeader label="Tipo" sortKey="type" />
-                <SortableHeader label="Licenciador" sortKey="license" />
-                <SortableHeader label="Contrato" sortKey="contract" />
-                <SortableHeader label="Identificação" sortKey="identification" />
-                <SortableHeader label="Dt Vencimento" sortKey="dueDate" />
-                <SortableHeader label="Dt Pagamento" sortKey="date" />
-                <SortableHeader label="Valor" sortKey="amount" />
-                <SortableHeader label="Invoice / NF" sortKey="invoice" />
-                <SortableHeader label="Status" sortKey="status" />
+                <SortableHeader label="Tipo" sortKey="typeDisplay" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Contrato" sortKey="contractNumber" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Identificação" sortKey="identification" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Dt Vencimento" sortKey="dueDate" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Dt Pagamento" sortKey="date" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Valor" sortKey="amount" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Invoice / NF" sortKey="invoice" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Status" sortKey="status" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <th className="px-4 py-3 text-center">Doc</th>
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
@@ -9408,6 +9347,8 @@ function DeleteLicensorDialog({ licenseId, licensorName }: { licenseId: string, 
 }
 
 function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: boolean }) {
+  const { items: sortedLicenses, requestSort, sortConfig } = useSortableData(licenses, { key: 'nomelicenciador', direction: 'asc' });
+
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between">
@@ -9421,13 +9362,13 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3">Nome</th>
-                <th className="px-4 py-3">Agentes</th>
+                <SortableHeader label="Nome" sortKey="nomelicenciador" currentSort={sortConfig} onSort={requestSort} />
+                <SortableHeader label="Agentes" sortKey="nomeagente" currentSort={sortConfig} onSort={requestSort} />
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-                {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l }))).map(({ value: license }) => (
+                {sortedLicenses.map((license) => (
                   <tr key={license.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-4 font-medium text-slate-900">{license.nomelicenciador || `ID: ${license.id.slice(0,5)}`}</td>
                     <td className="px-4 py-4 text-blue-600 font-medium">{license.nomeagente || '-'}</td>
@@ -9985,16 +9926,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   const [expandedProdYears, setExpandedProdYears] = useState<number[]>([]);
 
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'sku', direction: 'asc' });
   const [pageSize, setPageSize] = useState<number>(50);
-
-  const handleSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
 
   const filteredProducts = React.useMemo(() => products.filter(product => {
     const line = lines.find(l => l.id === product.lineId);
@@ -10008,34 +9940,19 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     return true;
   }), [products, lines, filterCategory, filterLine, filterLicense, filterYear]);
 
-  const sortedProducts = React.useMemo(() => [...filteredProducts].sort((a, b) => {
-    let valA: any = a[sortConfig.key as keyof Product];
-    let valB: any = b[sortConfig.key as keyof Product];
+  const displayProducts = React.useMemo(() => filteredProducts.map(p => {
+    const line = lines.find(l => l.id === p.lineId);
+    const category = categories.find(c => c.id === p.categoryId);
+    const license = licenses.find(l => l.id === (p.licenseId || line?.licenseId));
+    return {
+      ...p,
+      categoryName: category?.nomeCategoriaProduto || '',
+      lineName: line?.nomelinha || '',
+      licenseName: license?.nomelicenciador || ''
+    };
+  }), [filteredProducts, lines, categories, licenses]);
 
-    if (sortConfig.key === 'category') {
-      valA = categories.find(c => c.id === a.categoryId)?.nomeCategoriaProduto || '';
-      valB = categories.find(c => c.id === b.categoryId)?.nomeCategoriaProduto || '';
-    } else if (sortConfig.key === 'line') {
-      valA = lines.find(l => l.id === a.lineId)?.nomelinha || '';
-      valB = lines.find(l => l.id === b.lineId)?.nomelinha || '';
-    } else if (sortConfig.key === 'license') {
-      const lineA = lines.find(l => l.id === a.lineId);
-      const lineB = lines.find(l => l.id === b.lineId);
-      valA = licenses.find(l => l.id === (a.licenseId || lineA?.licenseId))?.nomelicenciador || '';
-      valB = licenses.find(l => l.id === (b.licenseId || lineB?.licenseId))?.nomelicenciador || '';
-    }
-
-    if (valA === undefined || valA === null) valA = '';
-    if (valB === undefined || valB === null) valB = '';
-
-    if (valA < valB) {
-      return sortConfig.direction === 'asc' ? -1 : 1;
-    }
-    if (valA > valB) {
-      return sortConfig.direction === 'asc' ? 1 : -1;
-    }
-    return 0;
-  }), [filteredProducts, sortConfig, categories, lines, licenses]);
+  const { items: sortedProducts, requestSort, sortConfig } = useSortableData(displayProducts, { key: 'sku', direction: 'asc' });
 
   const uniqueYears = sortOptions(Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))));
 
@@ -10473,30 +10390,16 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                     </th>
                   )}
                   <th className="px-4 py-3 w-16 bg-slate-50">Imagem</th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('sku')}>
-                    <div className="flex items-center gap-1">Código {sortConfig.key === 'sku' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('name')}>
-                    <div className="flex items-center gap-1">Nome {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('category')}>
-                    <div className="flex items-center gap-1">Categoria {sortConfig.key === 'category' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('line')}>
-                    <div className="flex items-center gap-1">Linha {sortConfig.key === 'line' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('license')}>
-                    <div className="flex items-center gap-1">Licenciador {sortConfig.key === 'license' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('launchYear')}>
-                    <div className="flex items-center gap-1">Ano {sortConfig.key === 'launchYear' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('ean')}>
-                    <div className="flex items-center gap-1">EAN {sortConfig.key === 'ean' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
-                  </th>
-                  <th className="px-4 py-3 text-right bg-slate-50">Custo Unit.</th>
-                  <th className="px-4 py-3 text-right bg-slate-50">Qtd Prod.</th>
-                  <th className="px-4 py-3 text-right bg-slate-50 font-semibold bg-blue-50/30">Total Custo</th>
+                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Nome" sortKey="name" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Categoria" sortKey="categoryName" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="EAN" sortKey="ean" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Custo Unit." sortKey="custo_unitario" currentSort={sortConfig} onSort={requestSort} className="text-right" />
+                  <SortableHeader label="Qtd Prod." sortKey="quantidade_produzida" currentSort={sortConfig} onSort={requestSort} className="text-right" />
+                  <SortableHeader label="Total Custo" sortKey="valor_total_custo_producao" currentSort={sortConfig} onSort={requestSort} className="text-right font-semibold bg-blue-50/30" />
                   {isAdmin && <th className="px-4 py-3 text-right bg-slate-50">Ações</th>}
                 </tr>
               </thead>
