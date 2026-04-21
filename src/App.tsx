@@ -85,6 +85,43 @@ import { MultiSelectDropdown } from './components/MultiSelectDropdown';
 import { ImportSalesDialog } from './components/ImportSalesDialog';
 import { SearchableSelect } from './components/SearchableSelect';
 
+// Utility to safely handle different date formats from Excel/Firestore
+const getSafeDate = (dateVal: string | number) => {
+  if (!dateVal) return new Date(NaN);
+  
+  const numVal = Number(dateVal);
+  if (!isNaN(numVal) && numVal > 10000 && numVal < 100000) {
+    // Pin to Midday UTC to avoid timezone floor/ceiling issues
+    return new Date((numVal - 25569) * 86400 * 1000 + (12 * 3600 * 1000));
+  }
+
+  if (typeof dateVal === 'string') {
+    const clean = dateVal.trim();
+    // Handle YYYY-MM-DD
+    if (clean.includes('-') && !clean.includes('T')) {
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+      }
+    }
+    
+    // Handle DD/MM/YYYY
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts.length === 3) {
+        let year = Number(parts[2]);
+        if (year < 100) year += 2000;
+        return new Date(year, Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
+      }
+    }
+    
+    const dt = new Date(dateVal);
+    if (!isNaN(dt.getTime())) return dt;
+  }
+  
+  return new Date(dateVal);
+};
+
 // Types
 interface License { 
   id: string; 
@@ -114,6 +151,12 @@ interface Product {
   launchYear?: number;
   ean?: string;
   costPrice?: number;
+  custo_unitario?: number;
+  quantidade_produzida?: number;
+  data_producao?: string;
+  quantidade_reprogramada?: number;
+  data_reprogramacao?: string;
+  valor_total_custo_producao?: number;
 }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface ContractYear {
@@ -1649,6 +1692,19 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const [licenseId, setLicenseId] = useState('');
   const [launchYear, setLaunchYear] = useState('');
   const [ean, setEan] = useState('');
+  const [custoUnitario, setCustoUnitario] = useState<string>('0');
+  const [qtdProduzida, setQtdProduzida] = useState<string>('0');
+  const [dataProducao, setDataProducao] = useState('');
+  const [qtdReprogramada, setQtdReprogramada] = useState<string>('0');
+  const [dataReprogramacao, setDataReprogramacao] = useState('');
+
+  const valorTotalCustoProducao = React.useMemo(() => {
+    const custo = parseFloat(custoUnitario) || 0;
+    const qtdProv = parseInt(qtdProduzida) || 0;
+    const qtdRepr = parseInt(qtdReprogramada) || 0;
+    const finalQtd = qtdRepr > 0 ? qtdRepr : qtdProv;
+    return finalQtd * custo;
+  }, [custoUnitario, qtdProduzida, qtdReprogramada]);
 
   const handleLineChange = (id: string) => {
     setLineId(id);
@@ -1672,6 +1728,12 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
         licenseId,
         launchYear: launchYear ? Number(launchYear) : null,
         ean,
+        custo_unitario: parseFloat(custoUnitario) || 0,
+        quantidade_produzida: parseInt(qtdProduzida) || 0,
+        data_producao: dataProducao || null,
+        quantidade_reprogramada: parseInt(qtdReprogramada) || 0,
+        data_reprogramacao: dataReprogramacao || null,
+        valor_total_custo_producao: valorTotalCustoProducao,
         createdAt: serverTimestamp() 
       });
       toast.success('Produto cadastrado com sucesso!');
@@ -1683,6 +1745,11 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
       setLicenseId('');
       setLaunchYear('');
       setEan('');
+      setCustoUnitario('0');
+      setQtdProduzida('0');
+      setDataProducao('');
+      setQtdReprogramada('0');
+      setDataReprogramacao('');
     } catch (err) {
       toast.error('Erro ao cadastrar produto.');
     }
@@ -1730,22 +1797,19 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="prodname">Nome do Produto</Label>
-            <Input id="prodname" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+          <div className="grid grid-cols-6 gap-4">
+            <div className="space-y-2 col-span-2">
               <Label htmlFor="sku">Código (SKU)</Label>
               <Input id="sku" value={sku} onChange={(e) => setSku(e.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="ean">EAN</Label>
-              <Input id="ean" value={ean} onChange={(e) => setEan(e.target.value)} />
+            <div className="space-y-2 col-span-4">
+              <Label htmlFor="prodname">Nome do Produto</Label>
+              <Input id="prodname" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+
+          <div className="grid grid-cols-6 gap-4 mt-4">
+            <div className="space-y-2 col-span-2">
               <Label>Categoria</Label>
               <Select onValueChange={setCategoryId} value={categoryId}>
                 <SelectTrigger>
@@ -1760,9 +1824,85 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 col-span-2">
               <Label htmlFor="launchYear">Ano de Lançamento</Label>
               <Input id="launchYear" type="number" value={launchYear} onChange={(e) => setLaunchYear(e.target.value)} />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="ean">EAN (Código de Barras)</Label>
+              <Input id="ean" value={ean} onChange={(e) => setEan(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 my-4 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <Database size={16} className="text-blue-600" /> Custos e Produção
+            </h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="custounit">Custo Unitário (R$)</Label>
+                <Input 
+                  id="custounit" 
+                  type="number" 
+                  step="0.01" 
+                  min="0"
+                  value={custoUnitario} 
+                  onChange={(e) => setCustoUnitario(Math.max(0, parseFloat(e.target.value) || 0).toString())} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Valor Total Custo</Label>
+                <div className="h-9 flex items-center px-3 bg-slate-50 border border-slate-200 rounded-md font-semibold text-blue-700 text-sm">
+                  {valorTotalCustoProducao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div className="space-y-2">
+                <Label htmlFor="qtdprod">Qtd Produzida</Label>
+                <Input 
+                  id="qtdprod" 
+                  type="number" 
+                  min="0"
+                  value={qtdProduzida} 
+                  onChange={(e) => setQtdProduzida(Math.max(0, parseInt(e.target.value) || 0).toString())} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dataprod">Data Produção</Label>
+                <Input 
+                  id="dataprod" 
+                  type="date" 
+                  value={dataProducao} 
+                  onChange={(e) => setDataProducao(e.target.value)} 
+                  className="h-9"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div className="space-y-2">
+                <Label htmlFor="qtdreprog">Qtd Reprogramada</Label>
+                <Input 
+                  id="qtdreprog" 
+                  type="number" 
+                  min="0"
+                  value={qtdReprogramada} 
+                  onChange={(e) => setQtdReprogramada(Math.max(0, parseInt(e.target.value) || 0).toString())} 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="datareprog">Data Reprogramação</Label>
+                <Input 
+                  id="datareprog" 
+                  type="date" 
+                  value={dataReprogramacao} 
+                  onChange={(e) => setDataReprogramacao(e.target.value)} 
+                  className="h-9"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -4515,41 +4655,6 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
   const [endDate, setEndDate] = useState('');
   const [isCompiling, setIsCompiling] = useState(false);
 
-  const getSafeDate = (dateVal: string | number) => {
-    if (!dateVal) return new Date(NaN);
-    
-    const numVal = Number(dateVal);
-    if (!isNaN(numVal) && numVal > 10000 && numVal < 100000) {
-      // Pin to Midday UTC
-      return new Date((numVal - 25569) * 86400 * 1000 + (12 * 3600 * 1000));
-    }
-
-    if (typeof dateVal === 'string') {
-      const clean = dateVal.trim();
-      if (clean.includes('-') && !clean.includes('T')) {
-        const parts = clean.split('-');
-        if (parts.length === 3) {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
-        }
-      }
-      if (clean.includes('/')) {
-        const parts = clean.split('/');
-        if (parts.length === 3) {
-          let year = Number(parts[2]);
-          if (year < 100) year += 2000;
-          return new Date(year, Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
-        }
-      }
-    }
-
-    const dt = new Date(dateVal);
-    if (!isNaN(dt.getTime())) {
-      return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
-    }
-    
-    return new Date(NaN);
-  };
-
   const royaltySummary = React.useMemo(() => {
     if (!startDate || !endDate || selectedProductSkus.length === 0 || !royaltyRateType || !contractId) return null;
     
@@ -6174,46 +6279,6 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
     '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
     '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
     '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
-  };
-
-  const getSafeDate = (dateVal: string | number) => {
-    if (!dateVal) return new Date(NaN);
-    
-    const numVal = Number(dateVal);
-    if (!isNaN(numVal) && numVal > 10000 && numVal < 100000) {
-      // Pin to Midday UTC to avoid timezone floor/ceiling issues
-      return new Date((numVal - 25569) * 86400 * 1000 + (12 * 3600 * 1000));
-    }
-
-    if (typeof dateVal === 'string') {
-      const clean = dateVal.trim();
-      // Handle YYYY-MM-DD as local midday
-      if (clean.includes('-') && !clean.includes('T')) {
-        const parts = clean.split('-');
-        if (parts.length === 3) {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
-        }
-      }
-      
-      // Handle DD/MM/YYYY specifically
-      if (clean.includes('/')) {
-        const parts = clean.split('/');
-        if (parts.length === 3) {
-          let year = Number(parts[2]);
-          if (year < 100) year += 2000;
-          return new Date(year, Number(parts[1]) - 1, Number(parts[0]), 12, 0, 0);
-        }
-      }
-    }
-
-    const dt = new Date(dateVal);
-    if (!isNaN(dt.getTime())) {
-      // If it looks like it was meant to be UTC Midnight, it might have shifted.
-      // We can't know for sure, but we can try to return the midday version.
-      return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
-    }
-    
-    return new Date(NaN);
   };
 
   const filteredSales = React.useMemo(() => {
@@ -9900,6 +9965,14 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   const [filterLicense, setFilterLicense] = useState<string>('all');
   const [filterYear, setFilterYear] = useState<string>('all');
   
+  // States for Production Summary
+  const [prodSummaryLicenseIds, setProdSummaryLicenseIds] = useState<string[]>([]);
+  const [prodSummaryLineIds, setProdSummaryLineIds] = useState<string[]>([]);
+  const [prodSummaryCategoryId, setProdSummaryCategoryId] = useState<string>('all');
+  const [prodSummaryValueType, setProdSummaryValueType] = useState<'produced' | 'reprogrammed' | 'cost'>('produced');
+  const [prodSummaryViewMode, setProdSummaryViewMode] = useState<'monthly' | 'quarterly'>('monthly');
+  const [expandedProdYears, setExpandedProdYears] = useState<number[]>([]);
+
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'sku', direction: 'asc' });
   const [pageSize, setPageSize] = useState<number>(50);
@@ -9955,6 +10028,50 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
 
   const uniqueYears = Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))).sort();
 
+  const prodSummaryData = React.useMemo(() => {
+    const filtered = products.filter(p => {
+      const line = lines.find(l => l.id === p.lineId);
+      const licId = p.licenseId || line?.licenseId;
+      
+      if (prodSummaryLicenseIds.length > 0 && !prodSummaryLicenseIds.includes(licId || '')) return false;
+      if (prodSummaryLineIds.length > 0 && !prodSummaryLineIds.includes(p.lineId)) return false;
+      if (prodSummaryCategoryId !== 'all' && p.categoryId !== prodSummaryCategoryId) return false;
+      return true;
+    });
+
+    const yearsSet = new Set<number>();
+    const grid: Record<number, Record<number, number>> = {};
+
+    filtered.forEach(p => {
+      const dateVal = (Number(p.quantidade_reprogramada) > 0 && p.data_reprogramacao) 
+        ? p.data_reprogramacao 
+        : p.data_producao;
+      
+      if (!dateVal) return;
+
+      const dt = getSafeDate(dateVal);
+      if (!isNaN(dt.getTime())) {
+        const y = dt.getFullYear();
+        const m = dt.getMonth() + 1;
+        yearsSet.add(y);
+        
+        if (!grid[y]) grid[y] = {};
+        if (!grid[y][m]) grid[y][m] = 0;
+        
+        const val = prodSummaryValueType === 'produced' ? (Number(p.quantidade_produzida) || 0) :
+                    prodSummaryValueType === 'reprogrammed' ? (Number(p.quantidade_reprogramada) || 0) :
+                    (Number(p.valor_total_custo_producao) || 0);
+        
+        grid[y][m] += val;
+      }
+    });
+
+    const years = Array.from(yearsSet).sort((a, b) => b - a); // Newest years first
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+
+    return { years, months, grid };
+  }, [products, prodSummaryLicenseIds, prodSummaryLineIds, prodSummaryCategoryId, prodSummaryValueType, lines, licenses, categories]);
+
   const toggleSelectAll = () => {
     if (selectedProductIds.length === filteredProducts.length) {
       setSelectedProductIds([]);
@@ -9985,6 +10102,258 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
 
   return (
     <div className="space-y-8">
+      {/* Production Summary Section */}
+      <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <CardHeader className="bg-slate-50/50 border-b border-slate-200 pt-4 pb-4 px-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-slate-800">
+                <TrendingUp size={18} className="text-blue-600" />
+                <h2 className="text-base font-semibold">Resumo de produção e custos</h2>
+              </div>
+              
+              <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500 bg-emerald-50/10 px-3 py-1 rounded-full border border-emerald-100">
+                <span>{prodSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
+                <span className="w-1 h-1 rounded-full bg-emerald-300" />
+                <span>
+                   {prodSummaryValueType === 'produced' ? 'Quantidades de Produção' : 
+                    prodSummaryValueType === 'reprogrammed' ? 'Quantidades de Reprogramação' : 
+                    'Valores Totais de Custo'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-3 w-full">
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Licenciadores</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px] bg-white"
+                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  selectedValues={prodSummaryLicenseIds}
+                  onChange={setProdSummaryLicenseIds}
+                  placeholder="Todos"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Linhas</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px] bg-white"
+                  options={lines.filter(l => prodSummaryLicenseIds.length === 0 || prodSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  selectedValues={prodSummaryLineIds}
+                  onChange={setProdSummaryLineIds}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[150px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Categorias</Label>
+                <SearchableSelect
+                  className="h-7 text-[10px] w-full bg-white"
+                  options={[
+                    { label: "Todas as Categorias", value: "all" },
+                    ...categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))
+                  ]}
+                  value={prodSummaryCategoryId}
+                  onValueChange={setProdSummaryCategoryId}
+                  placeholder="Todas"
+                />
+              </div>
+
+              <div className="min-w-[120px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Período</Label>
+                <Select value={prodSummaryViewMode} onValueChange={(v: any) => setProdSummaryViewMode(v)}>
+                  <SelectTrigger className="h-7 text-[10px] w-full bg-white">
+                    <span>{prodSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
+                  </SelectTrigger>
+                  <SelectContent className="z-[9999]">
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label className="text-[10px] text-slate-400 font-medium">Tipo de Valor</Label>
+                <Select value={prodSummaryValueType} onValueChange={(v: any) => setProdSummaryValueType(v)}>
+                  <SelectTrigger className="h-7 text-[10px] w-full bg-white">
+                    <span>
+                      {prodSummaryValueType === 'produced' ? 'Quantidades de Produção' : 
+                       prodSummaryValueType === 'reprogrammed' ? 'Quantidades de Reprogramação' : 
+                       'Valores Totais de Custo'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="z-[9999]">
+                    <SelectItem value="produced">Quantidades de Produção</SelectItem>
+                    <SelectItem value="reprogrammed">Quantidades de Reprogramação</SelectItem>
+                    <SelectItem value="cost">Valores Totais de Custo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-xs text-left border-collapse table-fixed min-w-[1000px]">
+            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+              <tr>
+                <th className="px-3 py-2 border-r border-slate-200 w-24 text-center">Ano</th>
+                {prodSummaryViewMode === 'monthly' ? (
+                  ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'].map(m => (
+                    <th key={m} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/12)]">{m}</th>
+                  ))
+                ) : (
+                  ['T1', 'T2', 'T3', 'T4'].map(t => (
+                    <th key={t} className="px-1 py-2 text-center border-r border-slate-200 w-[calc((100%-208px)/4)]">{t}</th>
+                  ))
+                )}
+                <th className="px-3 py-2 text-center w-28">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {prodSummaryData.years.length === 0 ? (
+                <tr>
+                  <td colSpan={prodSummaryViewMode === 'monthly' ? 14 : 6} className="px-4 py-8 text-center text-slate-400 italic">
+                    Nenhum dado de produção encontrado para os filtros selecionados.
+                  </td>
+                </tr>
+              ) : (
+                prodSummaryData.years.map(year => {
+                  let yearTotal = 0;
+                  const rowValues = prodSummaryViewMode === 'monthly' ? (
+                    prodSummaryData.months.map(m => {
+                      const val = prodSummaryData.grid[year]?.[m] || 0;
+                      yearTotal += val;
+                      return val;
+                    })
+                  ) : (
+                    [1, 2, 3, 4].map(q => {
+                      const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                      const val = qMonths.reduce((acc, m) => acc + (prodSummaryData.grid[year]?.[m] || 0), 0);
+                      yearTotal += val;
+                      return val;
+                    })
+                  );
+
+                  return (
+                    <React.Fragment key={year}>
+                      <tr className="hover:bg-slate-50/50 transition-colors cursor-pointer group" onClick={() => {
+                        setExpandedProdYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
+                      }}>
+                        <td className="px-3 py-2 font-bold bg-slate-50/30 border-r border-slate-200 text-center flex items-center justify-center gap-2">
+                           <span className="text-slate-400">
+                              {expandedProdYears.includes(year) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                           </span>
+                           {year}
+                        </td>
+                        {rowValues.map((v, i) => (
+                          <td key={i} className={`px-2 py-2 text-right border-r border-slate-200 ${v > 0 ? 'text-slate-900 font-medium' : 'text-slate-300'}`}>
+                            {prodSummaryValueType === 'cost' ? 
+                              v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+                              v.toLocaleString('pt-BR')}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-right font-bold bg-emerald-50/30 text-emerald-700">
+                          {prodSummaryValueType === 'cost' ? 
+                            yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+                            yearTotal.toLocaleString('pt-BR')}
+                        </td>
+                      </tr>
+                      {expandedProdYears.includes(year) && (
+                        <tr className="bg-slate-50/80 animate-in fade-in slide-in-from-top-1 border-b border-slate-100">
+                          <td className="px-3 py-1.5 text-[10px] italic text-slate-500 border-r border-slate-200 bg-slate-100/30 text-center">
+                            % Evolução
+                          </td>
+                          {rowValues.map((v, i) => {
+                            let comparisonVal = 0;
+                            const prevYear = year - 1;
+                            if (prodSummaryData.years.includes(prevYear) || prodSummaryData.grid[prevYear]) {
+                              if (prodSummaryViewMode === 'monthly') {
+                                comparisonVal = prodSummaryData.grid[prevYear]?.[i + 1] || 0;
+                              } else {
+                                const q = i + 1;
+                                const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                                comparisonVal = qMonths.reduce((acc, m) => acc + (prodSummaryData.grid[prevYear]?.[m] || 0), 0);
+                              }
+                            }
+                            const variance = comparisonVal > 0 ? ((v - comparisonVal) / comparisonVal) * 100 : 0;
+                            const isPositive = variance > 0;
+                            const isZero = variance === 0 && v === comparisonVal;
+                            
+                            if (comparisonVal === 0) return (
+                              <td key={i} className="px-1 py-1.5 text-center border-r border-slate-200 text-slate-400 text-[10px]">-</td>
+                            );
+                            
+                            return (
+                              <td key={i} className={`px-1 py-1.5 text-center border-r border-slate-200 text-[10px] font-medium ${isPositive ? 'text-emerald-600' : isZero ? 'text-slate-400' : 'text-rose-600'}`}>
+                                {isPositive ? '+' : ''}{variance.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-1.5 text-right bg-emerald-50/50 text-[10px] font-bold text-slate-600">
+                            {(() => {
+                              let prevYearTotal = 0;
+                              const prevYear = year - 1;
+                              if (prodSummaryData.grid[prevYear]) {
+                                Array.from({length: 12}, (_, k) => k + 1).forEach(m => {
+                                  prevYearTotal += prodSummaryData.grid[prevYear]?.[m] || 0;
+                                });
+                              }
+                              if (prevYearTotal === 0) return '-';
+                              const totalVar = ((yearTotal - prevYearTotal) / prevYearTotal) * 100;
+                              return `${totalVar > 0 ? '+' : ''}${totalVar.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+                            })()}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              )}
+              {/* Grand Total Row */}
+              {prodSummaryData.years.length > 0 && (
+                <tr className="bg-slate-100/50 font-bold border-t-2 border-slate-200">
+                  <td className="px-3 py-3 border-r border-slate-200 text-center text-slate-700 uppercase tracking-wider">
+                    Total Geral
+                  </td>
+                  {(prodSummaryViewMode === 'monthly' ? Array.from({length: 12}) : Array.from({length: 4})).map((_, i) => {
+                    let colTotal = 0;
+                    prodSummaryData.years.forEach(y => {
+                      if (prodSummaryViewMode === 'monthly') {
+                        colTotal += prodSummaryData.grid[y]?.[i + 1] || 0;
+                      } else {
+                        const q = i + 1;
+                        const qMonths = q === 1 ? [1, 2, 3] : q === 2 ? [4, 5, 6] : q === 3 ? [7, 8, 9] : [10, 11, 12];
+                        colTotal += qMonths.reduce((acc, m) => acc + (prodSummaryData.grid[y]?.[m] || 0), 0);
+                      }
+                    });
+                    return (
+                      <td key={i} className="px-2 py-3 text-right border-r border-slate-200 text-emerald-800">
+                        {prodSummaryValueType === 'cost' ? 
+                          colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+                          colTotal.toLocaleString('pt-BR')}
+                      </td>
+                    );
+                  })}
+                  <td className="px-3 py-3 text-right text-emerald-900 bg-emerald-100/30">
+                    {(() => {
+                      let grandTotal = 0;
+                      prodSummaryData.years.forEach(y => {
+                        Object.values(prodSummaryData.grid[y] || {}).forEach((v: any) => grandTotal += (v as number));
+                      });
+                      return prodSummaryValueType === 'cost' ? 
+                        grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+                        grandTotal.toLocaleString('pt-BR');
+                    })()}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -10051,6 +10420,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               <div className="flex items-center gap-2 ml-4">
                 <BatchEditProductsDialog 
                   selectedProductIds={selectedProductIds} 
+                  products={products}
                   licenses={licenses} 
                   lines={lines} 
                   categories={categories} 
@@ -10116,6 +10486,9 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                   <th className="px-4 py-3 cursor-pointer hover:bg-slate-100 bg-slate-50" onClick={() => handleSort('ean')}>
                     <div className="flex items-center gap-1">EAN {sortConfig.key === 'ean' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}</div>
                   </th>
+                  <th className="px-4 py-3 text-right bg-slate-50">Custo Unit.</th>
+                  <th className="px-4 py-3 text-right bg-slate-50">Qtd Prod.</th>
+                  <th className="px-4 py-3 text-right bg-slate-50 font-semibold bg-blue-50/30">Total Custo</th>
                   {isAdmin && <th className="px-4 py-3 text-right bg-slate-50">Ações</th>}
                 </tr>
               </thead>
@@ -10161,6 +10534,20 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                       <td className="px-4 py-4 text-slate-600">{license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (product.licenseId ? `ID: ${product.licenseId.slice(0,5)}` : '-'))}</td>
                       <td className="px-4 py-4 text-slate-600">{product.launchYear || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
+                      <td className="px-4 py-4 text-right">
+                        {(product.custo_unitario || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="text-[13px]">{product.quantidade_produzida || 0}</span>
+                          {(product.quantidade_reprogramada || 0) > 0 && (
+                            <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded font-medium">Repr: {product.quantidade_reprogramada}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-right font-medium text-blue-700 bg-blue-50/10">
+                        {(product.valor_total_custo_producao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
                       {isAdmin && (
                         <td className="px-4 py-4 text-right">
                           <div className="flex justify-end gap-1">

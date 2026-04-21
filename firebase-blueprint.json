@@ -24,12 +24,22 @@
     },
     "Product": {
       "title": "Produto",
-      "description": "Produto específico vinculado a uma linha.",
+      "description": "Produto específico vinculado a uma linha com dados de custo e produção.",
       "type": "object",
       "properties": {
         "lineId": { "type": "string", "description": "ID da linha pai" },
         "name": { "type": "string", "description": "Nome do produto" },
-        "sku": { "type": "string", "description": "Código SKU (opcional)" }
+        "sku": { "type": "string", "description": "Código SKU (opcional)" },
+        "categoryId": { "type": "string", "description": "ID da categoria" },
+        "licenseId": { "type": "string", "description": "ID do licenciador" },
+        "launchYear": { "type": "number", "description": "Ano de lançamento" },
+        "ean": { "type": "string", "description": "Código de barras EAN" },
+        "custo_unitario": { "type": "number", "description": "Custo unitário de produção" },
+        "quantidade_produzida": { "type": "number", "description": "Quantidade total produzida" },
+        "data_producao": { "type": "string", "format": "date", "description": "Data da produção original" },
+        "quantidade_reprogramada": { "type": "number", "description": "Quantidade produzida reprogramada" },
+        "data_reprogramacao": { "type": "string", "format": "date", "description": "Data da reprogramação" },
+        "valor_total_custo_producao": { "type": "number", "description": "Valor total investido na produção (calculado)" }
       },
       "required": ["lineId", "name"]
     },
