@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Edit2, Database } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, sortOptions } from '@/lib/utils';
 
 // Types
 interface License { id: string; nomelicenciador: string; nomejurlicenciador: string; nomeagente?: string; descricaolicenciador?: string; }
@@ -125,8 +125,8 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Remover Licenciador</SelectItem>
-                  {[...licenses].sort((a, b) => (a.nomelicenciador || '').localeCompare(b.nomelicenciador || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -141,8 +141,8 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).sort((a, b) => (a.nomelinha || '').localeCompare(b.nomelinha || '')).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(lines.filter(l => !licenseId || licenseId === 'none' || l.licenseId === licenseId).map(l => ({ label: l.nomelinha || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -171,8 +171,8 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Remover Categoria</SelectItem>
-                  {[...categories].sort((a,b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || '')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(categories.map(c => ({ label: c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`, value: c.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

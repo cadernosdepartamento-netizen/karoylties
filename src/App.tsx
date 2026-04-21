@@ -55,7 +55,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, sortOptions } from '@/lib/utils';
 import { 
   Dialog, 
   DialogContent, 
@@ -1437,9 +1437,9 @@ function AddLineDialog({ licenses }: { licenses: License[] }) {
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}
+                {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1781,9 +1781,9 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...lines].sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelinha || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                  ))}
+                {sortOptions(lines.map(l => ({ label: l.nomelinha || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1818,9 +1818,9 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...categories].sort((a, b) => (a.nomeCategoriaProduto || a.id).localeCompare(b.nomeCategoriaProduto || b.id)).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`}</SelectItem>
-                  ))}
+                {sortOptions(categories.map(c => ({ label: c.nomeCategoriaProduto || `ID: ${c.id.slice(0,5)}`, value: c.id }))).map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
                 </SelectContent>
               </Select>
             </div>
@@ -2196,9 +2196,11 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
   const allCategories = Array.from(new Set(linkedLines.flatMap(l => l.productCategories || [])));
   const productsByCat = allCategories.map(cat => ({
     category: cat,
-    products: linkedProducts
-      .filter(p => linkedLines.some(l => l.id === p.lineId && l.productCategories?.includes(cat)))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    products: sortOptions(
+      linkedProducts
+        .filter(p => linkedLines.some(l => l.id === p.lineId && l.productCategories?.includes(cat)))
+        .map(p => ({ label: p.name, value: p }))
+    ).map(opt => opt.value)
   })).filter(item => item.products.length > 0);
 
   return (
@@ -2279,21 +2281,21 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
           <form onSubmit={handleUpdate} className="space-y-6 pt-4">
             {step === 1 && (
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
-                  <Label>Licenciador</Label>
-                  <Select onValueChange={setLicenseId} value={licenseId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o licenciador">
-                        {licenses.find(l => l.id === licenseId)?.nomelicenciador}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Licenciador</Label>
+              <Select onValueChange={setLicenseId} value={licenseId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o licenciador">
+                    {licenses.find(l => l.id === licenseId)?.nomelicenciador}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
                 <div className="space-y-2">
                   <Label>Nº do Contrato</Label>
                   <Input value={contractNumber} onChange={(e) => setContractNumber(e.target.value)} placeholder="Ex: 123/2024" />
@@ -2332,8 +2334,8 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                       <Select onValueChange={setParentId} value={parentId}>
                         <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
                       <SelectContent>
-                        {contracts && [...contracts].filter(c => c.licenseId === licenseId && c.id !== contract.id).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0, 5)}`}</SelectItem>
+                        {contracts && sortOptions(contracts.filter(c => c.licenseId === licenseId && c.id !== contract.id).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0, 5)}`, value: c.id }))).map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
                       </SelectContent>
                       </Select>
@@ -2727,10 +2729,13 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                 <div className="space-y-2">
                   <Label>Linhas Vinculadas</Label>
                   <div className="flex flex-wrap gap-2 p-4 border rounded-lg bg-slate-50">
-                    {lines
-                      .filter(l => l.licenseId === licenseId)
-                      .sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id))
-                      .map(l => (
+                    {sortOptions(
+                      lines
+                        .filter(l => l.licenseId === licenseId)
+                        .map(l => ({ label: l.nomelinha || l.id, value: l }))
+                    ).map(opt => {
+                      const l = opt.value;
+                      return (
                         <Badge 
                           key={l.id} 
                           variant={selectedLines.includes(l.id) ? "default" : "outline"}
@@ -2743,7 +2748,8 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                         >
                           {l.nomelinha || `ID: ${l.id.slice(0,5)}`}
                         </Badge>
-                      ))}
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -4102,8 +4108,8 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                        <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                      {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -4135,8 +4141,8 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                     <Select onValueChange={setParentId} value={parentId}>
                       <SelectTrigger><SelectValue placeholder="Selecione o contrato principal" /></SelectTrigger>
                       <SelectContent>
-                        {contracts && [...contracts].filter(c => c.licenseId === licenseId).sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0, 5)}`}</SelectItem>
+                        {contracts && sortOptions(contracts.filter(c => c.licenseId === licenseId).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0, 5)}`, value: c.id }))).map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -4752,7 +4758,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
       });
 
       console.log("DEBUG_SKU_CHECK: Total Sales matching in period:", matchingSales.length);
-      const uniqueSkus = Array.from(new Set(matchingSales.map(s => String(s.sku || "").trim()))).sort();
+      const uniqueSkus = sortOptions(Array.from(new Set(matchingSales.map(s => String(s.sku || "").trim()))));
       console.log("DEBUG_SKU_CHECK: SKUs found:", uniqueSkus);
       
       if (matchingSales.length === 0) {
@@ -4880,11 +4886,11 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
   // Melhora a filtragem: produtos que pertencem às linhas do licenciador selecionado
   const availableLineIds = new Set(availableLines.map(l => l.id));
 
-  const availableLaunchYears = Array.from(new Set(products
+  const availableLaunchYears = sortOptions(Array.from(new Set(products
       .filter(p => availableLineIds.has(p.lineId) && (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)))
       .map(p => p.launchYear)
       .filter((y): y is number => !!y)
-  )).sort((a,b) => b - a);
+  )));
 
   const availableProducts = products.filter(p => 
     availableLineIds.has(p.lineId) && 
@@ -4933,8 +4939,8 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {[...licenses].sort((a,b) => a.nomelicenciador.localeCompare(b.nomelicenciador)).map(l => (
-                  <SelectItem key={l.id} value={l.id}>{l.nomelicenciador}</SelectItem>
+                {sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))).map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -4950,8 +4956,8 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {availableContracts.sort((a,b) => (a.contractNumber||'').localeCompare(b.contractNumber||'')).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || `ID: ${c.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(availableContracts.map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -5005,7 +5011,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
             <div className="space-y-2">
               <Label className="text-xs text-slate-500 font-semibold uppercase">Filtro de Linhas (Opcional)</Label>
               <MultiSelectDropdown
-                options={availableLines.map(l => ({ label: l.nomelinha, value: l.id }))}
+                options={sortOptions(availableLines.map(l => ({ label: l.nomelinha, value: l.id })))}
                 selectedValues={selectedLineIds}
                 onChange={setSelectedLineIds}
                 placeholder="Todas as linhas do licenciador"
@@ -5017,7 +5023,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
              <div className="space-y-2">
                <Label className="text-xs text-slate-500 font-semibold uppercase">Ano de Lançamento (Opcional)</Label>
                <MultiSelectDropdown
-                 options={availableLaunchYears.map(y => ({ label: String(y), value: String(y) }))}
+                 options={sortOptions(availableLaunchYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
                  selectedValues={selectedLaunchYears}
                  onChange={setSelectedLaunchYears}
                  placeholder="Todos os anos"
@@ -5029,7 +5035,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
             <div className="space-y-2">
               <Label className="text-xs text-slate-500 font-semibold uppercase">Produtos a serem apurados</Label>
               <MultiSelectDropdown
-                options={availableProducts.map(p => ({ label: `${p.sku} - ${p.name}`, value: String(p.sku) }))}
+                options={sortOptions(availableProducts.map(p => ({ label: `${p.sku} - ${p.name}`, value: String(p.sku) })))}
                 selectedValues={selectedProductSkus}
                 onChange={setSelectedProductSkus}
                 placeholder="Selecione os produtos"
@@ -5140,7 +5146,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
       selectedContract.years.forEach(y => yearsSet.add(String(y.yearNumber)));
     }
     
-    return Array.from(yearsSet).sort();
+    return sortOptions(Array.from(yearsSet));
   }, [selectedContract, type]);
 
   const availableInstallments = React.useMemo(() => {
@@ -5157,7 +5163,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
       });
     }
     
-    return Array.from(instSet).sort();
+    return sortOptions(Array.from(instSet));
   }, [selectedContract, type, year]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -5274,8 +5280,8 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -5296,10 +5302,10 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...filteredContracts].sort((a, b) => (a.contractNumber || '').localeCompare(b.contractNumber || '')).map(c => {
+                  {sortOptions(filteredContracts.map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))).map(opt => {
                     return (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.contractNumber || `ID: ${c.id.slice(0,5)}`}
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
                       </SelectItem>
                     );
                   })}
@@ -6309,7 +6315,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
          months.add(String(dt.getMonth() + 1).padStart(2, '0'));
       }
     });
-    return Array.from(months).sort();
+    return sortOptions(Array.from(months));
   }, [sales]);
 
   const allSaleYears = React.useMemo(() => {
@@ -6320,7 +6326,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
          years.add(String(dt.getFullYear()));
       }
     });
-    return Array.from(years).sort();
+    return sortOptions(Array.from(years));
   }, [sales]);
 
   const availableOptions = React.useMemo(() => {
@@ -6542,7 +6548,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 <Label className="text-[10px] text-slate-400 font-medium">Licenciadores</Label>
                 <MultiSelectDropdown
                   className="h-7 text-[10px]"
-                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                   selectedValues={salesSummaryLicenseIds}
                   onChange={setSalesSummaryLicenseIds}
                   placeholder="Todos"
@@ -6553,7 +6559,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 <Label className="text-[10px] text-slate-400 font-medium">Linhas</Label>
                 <MultiSelectDropdown
                   className="h-7 text-[10px]"
-                  options={lines.filter(l => salesSummaryLicenseIds.length === 0 || salesSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  options={sortOptions(lines.filter(l => salesSummaryLicenseIds.length === 0 || salesSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id })))}
                   selectedValues={salesSummaryLineIds}
                   onChange={setSalesSummaryLineIds}
                   placeholder="Todas"
@@ -6564,7 +6570,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 <Label className="text-[10px] text-slate-400 font-medium">Categorias</Label>
                 <MultiSelectDropdown
                   className="h-7 text-[10px]"
-                  options={categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))}
+                  options={sortOptions(categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id })))}
                   selectedValues={salesSummaryCategoryIds}
                   onChange={setSalesSummaryCategoryIds}
                   placeholder="Todas"
@@ -6814,7 +6820,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Licenciador</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableOptions.licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                options={sortOptions(availableOptions.licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                 selectedValues={selectedLicenses}
                 onChange={setSelectedLicenses}
                 placeholder="Todos"
@@ -6826,7 +6832,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Linha</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableOptions.lines.map(l => ({ label: l.nomelinha, value: l.id }))}
+                options={sortOptions(availableOptions.lines.map(l => ({ label: l.nomelinha, value: l.id })))}
                 selectedValues={selectedLines}
                 onChange={setSelectedLines}
                 placeholder="Todas"
@@ -6838,7 +6844,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Categoria</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableOptions.categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))}
+                options={sortOptions(availableOptions.categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id })))}
                 selectedValues={selectedCategories}
                 onChange={setSelectedCategories}
                 placeholder="Todas"
@@ -6850,7 +6856,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Ano Lanç.</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableOptions.years.sort((a,b) => b-a).map(y => ({ label: String(y), value: String(y) }))}
+                options={sortOptions(availableOptions.years.map(y => ({ label: String(y), value: String(y) })), 'number')}
                 selectedValues={selectedYears}
                 onChange={setSelectedYears}
                 placeholder="Todos"
@@ -6862,11 +6868,11 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Código SKU</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableOptions.skus.sort().map(sku => {
+                options={sortOptions(availableOptions.skus.map(sku => {
                   const prod = products.find(p => String(p.sku || "").trim() === String(sku || "").trim());
                   const displayName = prod ? `${sku} - ${prod.name}` : sku;
                   return { label: displayName, value: sku };
-                })}
+                }))}
                 selectedValues={selectedSkus}
                 onChange={setSelectedSkus}
                 placeholder="Todos"
@@ -6878,7 +6884,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Mês Venda</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={allSaleMonths.map(m => ({ label: monthMap[m] || m, value: m }))}
+                options={sortOptions(allSaleMonths.map(m => ({ label: monthMap[m] || m, value: m })))}
                 selectedValues={selectedSaleMonths}
                 onChange={setSelectedSaleMonths}
                 placeholder="Todos"
@@ -6890,7 +6896,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <Label className="text-[11px] text-slate-400">Ano Venda</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={allSaleYears.map(y => ({ label: y, value: y }))}
+                options={sortOptions(allSaleYears.map(y => ({ label: y, value: y })), 'number')}
                 selectedValues={selectedSaleYears}
                 onChange={setSelectedSaleYears}
                 placeholder="Todos"
@@ -7235,13 +7241,13 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
     });
 
     return {
-      availableYears: Array.from(yearsSet).sort((a,b)=>b-a),
-      availableMonths: Array.from(monthsSet).sort((a,b)=>a-b),
-      availableLaunchYears: Array.from(launchYearsSet).sort((a,b)=>b-a),
+      availableYears: sortOptions(Array.from(yearsSet)),
+      availableMonths: sortOptions(Array.from(monthsSet)),
+      availableLaunchYears: sortOptions(Array.from(launchYearsSet)),
       availableContracts: contracts.filter(c => c.licenseId === selectedLicenseId),
       availableLines: lines.filter(l => l.licenseId === selectedLicenseId),
-      allCurrencies: Array.from(currenciesSet).sort(),
-      availableCalculationTypes: Array.from(calcTypesSet).sort()
+      allCurrencies: sortOptions(Array.from(currenciesSet)),
+      availableCalculationTypes: sortOptions(Array.from(calcTypesSet))
     };
   }, [reports, products, selectedLicenseId, selectedLineIds, contracts, lines]);
 
@@ -7392,7 +7398,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 <Label className="text-[11px] text-slate-400">Licenciadores</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs"
-                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                   selectedValues={summaryLicenseIds}
                   onChange={setSummaryLicenseIds}
                   placeholder="Todos"
@@ -7402,8 +7408,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <div className="min-w-[150px] flex-1 space-y-1">
                 <Label className="text-[11px] text-slate-400">Linhas</Label>
                 <MultiSelectDropdown
-                  className="h-8 text-xs"
-                  options={lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  className="h-8 text-xs font-normal"
+                  options={sortOptions(lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id })))}
                   selectedValues={summaryLineIds}
                   onChange={setSummaryLineIds}
                   placeholder="Todas"
@@ -7413,8 +7419,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <div className="min-w-[150px] flex-1 space-y-1">
                 <Label className="text-[11px] text-slate-400">Contratos</Label>
                 <MultiSelectDropdown
-                  className="h-8 text-xs"
-                  options={contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))}
+                  className="h-8 text-xs font-normal"
+                  options={sortOptions(contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id })))}
                   selectedValues={summaryContractIds}
                   onChange={setSummaryContractIds}
                   placeholder="Todos"
@@ -7425,7 +7431,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 <Label className="text-[11px] text-slate-400">Moeda</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs"
-                  options={allCurrencies.map(c => ({ label: c, value: c }))}
+                  options={sortOptions(allCurrencies.map(c => ({ label: c, value: c })))}
                   selectedValues={summaryCurrencies}
                   onChange={setSummaryCurrencies}
                   placeholder="Todas"
@@ -7436,11 +7442,11 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 <Label className="text-[11px] text-slate-400">Tipo de Cálculo</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs"
-                  options={[
+                  options={sortOptions([
                     { label: 'Vendas', value: 'Vendas' },
                     { label: 'Compras', value: 'Compras' },
                     { label: 'FOB', value: 'FOB' }
-                  ]}
+                  ])}
                   selectedValues={summaryCalculationTypes}
                   onChange={setSummaryCalculationTypes}
                   placeholder="Todos"
@@ -7669,10 +7675,10 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <Label className="text-xs">Licenciador</Label>
               <SearchableSelect
                 className="h-8 text-xs"
-                options={[
+                options={sortOptions([
                   { label: "Todos os Licenciadores", value: "ALL" },
-                  ...[...licenses].sort((a,b)=>a.nomelicenciador.localeCompare(b.nomelicenciador)).map(l => ({ label: l.nomelicenciador, value: l.id }))
-                ]}
+                  ...licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))
+                ])}
                 value={selectedLicenseId || "ALL"}
                 onValueChange={(v) => { 
                   setSelectedLicenseId(v==="ALL" ? "" : v); 
@@ -7688,10 +7694,10 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <SearchableSelect
                 disabled={!selectedLicenseId}
                 className="h-8 text-xs"
-                options={[
+                options={sortOptions([
                   { label: "Todos os Contratos", value: "ALL" },
                   ...availableContracts.map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
-                ]}
+                ])}
                 value={selectedContractId || "ALL"}
                 onValueChange={(v) => { setSelectedContractId(v==="ALL" ? "" : v); }}
                 placeholder="Selecione um contrato"
@@ -7713,7 +7719,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <Label className="text-xs">Lançamento</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableLaunchYears.map(y => ({ label: String(y), value: String(y) }))}
+                options={sortOptions(availableLaunchYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
                 selectedValues={selectedLaunchYears}
                 onChange={setSelectedLaunchYears}
                 placeholder="Todos os Anos"
@@ -7724,7 +7730,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <Label className="text-xs">Tipo de Cálculo</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableCalculationTypes.map(t => ({ label: t, value: t }))}
+                options={sortOptions(availableCalculationTypes.map(t => ({ label: t, value: t })))}
                 selectedValues={selectedCalculationTypes}
                 onChange={setSelectedCalculationTypes}
                 placeholder="Todos os Tipos"
@@ -7735,7 +7741,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <Label className="text-xs">Ano (Venda)</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableYears.map(y => ({ label: String(y), value: String(y) }))}
+                options={sortOptions(availableYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
                 selectedValues={selectedYears}
                 onChange={setSelectedYears}
                 placeholder="Todos os Anos"
@@ -7746,7 +7752,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               <Label className="text-xs">Mês (Venda)</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs"
-                options={availableMonths.map(m => ({ label: String(m).padStart(2, '0'), value: String(m) }))}
+                options={sortOptions(availableMonths.map(m => ({ label: String(m).padStart(2, '0'), value: String(m) })), 'number')}
                 selectedValues={selectedMonths}
                 onChange={setSelectedMonths}
                 placeholder="Todos Meses"
@@ -7940,7 +7946,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
       selectedContract.years.forEach(y => yearsSet.add(String(y.yearNumber)));
     }
     
-    return Array.from(yearsSet).sort();
+    return sortOptions(Array.from(yearsSet));
   }, [selectedContract, type]);
 
   const availableInstallments = React.useMemo(() => {
@@ -7957,7 +7963,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
       });
     }
     
-    return Array.from(instSet).sort();
+    return sortOptions(Array.from(instSet));
   }, [selectedContract, type, year]);
 
   const handleDelete = async () => {
@@ -8065,8 +8071,8 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -8087,10 +8093,10 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...filteredContracts].sort((a, b) => (a.contractNumber || a.id).localeCompare(b.contractNumber || b.id)).map(c => {
+                  {sortOptions(filteredContracts.map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))).map(opt => {
                     return (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.contractNumber || `ID: ${c.id.slice(0,5)}`}
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
                       </SelectItem>
                     );
                   })}
@@ -8664,19 +8670,19 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
   // Unique years for filters
   const availableYears = React.useMemo(() => {
     const years = obligations.map(o => String(o.year)).filter(y => y && y !== '-');
-    return Array.from(new Set(years)).sort();
+    return sortOptions(Array.from(new Set(years)));
   }, [obligations]);
 
   // Unique types for filters
   const availableTypes = React.useMemo(() => {
     const types = obligations.map(o => o.type);
-    return Array.from(new Set(types)).sort();
+    return sortOptions(Array.from(new Set(types)));
   }, [obligations]);
 
   // Unique invoices for filters
   const availableInvoices = React.useMemo(() => {
     const invoices = obligations.map(o => String(o.invoice)).filter(i => i && i !== '-');
-    return Array.from(new Set(invoices)).sort();
+    return sortOptions(Array.from(new Set(invoices)));
   }, [obligations]);
 
   // Filtered Obligations
@@ -8816,7 +8822,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 <Label className="text-[11px] text-slate-400">Licenciadores</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs bg-white border-slate-200"
-                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                   selectedValues={summaryLicenseIds}
                   onChange={setSummaryLicenseIds}
                   placeholder="Todos"
@@ -8827,7 +8833,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 <Label className="text-[11px] text-slate-400">Linhas</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs bg-white border-slate-200"
-                  options={lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  options={sortOptions(lines.filter(l => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id })))}
                   selectedValues={summaryLineIds}
                   onChange={setSummaryLineIds}
                   placeholder="Todas"
@@ -8838,7 +8844,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 <Label className="text-[11px] text-slate-400">Contratos</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs bg-white border-slate-200"
-                  options={contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))}
+                  options={sortOptions(contracts.filter(c => summaryLicenseIds.length === 0 || summaryLicenseIds.includes(c.licenseId)).map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id })))}
                   selectedValues={summaryContractIds}
                   onChange={setSummaryContractIds}
                   placeholder="Todos"
@@ -8849,7 +8855,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 <Label className="text-[11px] text-slate-400">Tipo</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs bg-white border-slate-200"
-                  options={availableTypes.map(t => ({ label: t, value: t }))}
+                  options={sortOptions(availableTypes.map(t => ({ label: t, value: t })))}
                   selectedValues={summaryTypes}
                   onChange={setSummaryTypes}
                   placeholder="Todos"
@@ -8860,10 +8866,10 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                 <Label className="text-[11px] text-slate-400">Status</Label>
                 <MultiSelectDropdown
                   className="h-8 text-xs bg-white border-slate-200"
-                  options={[
+                  options={sortOptions([
                     { label: 'Pago', value: 'paid' },
                     { label: 'Pendente', value: 'pending' }
-                  ]}
+                  ])}
                   selectedValues={summaryStatuses}
                   onChange={setSummaryStatuses}
                   placeholder="Todos"
@@ -9015,7 +9021,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
               <Label className="text-[11px] text-slate-400">Licenciador</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs border-slate-200 bg-white"
-                options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                 selectedValues={obsLicenseIds}
                 onChange={setObsLicenseIds}
                 placeholder="Todos"
@@ -9026,10 +9032,10 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
               <Label className="text-[11px] text-slate-400">Contratos</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs border-slate-200 bg-white"
-                options={contracts
+                options={sortOptions(contracts
                   .filter(c => obsLicenseIds.length === 0 || obsLicenseIds.includes(c.licenseId))
                   .map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
-                }
+                )}
                 selectedValues={obsContractIds}
                 onChange={setObsContractIds}
                 placeholder="Todos"
@@ -9040,7 +9046,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
               <Label className="text-[11px] text-slate-400">Tipo</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs border-slate-200 bg-white"
-                options={availableTypes.map(t => ({ label: t, value: t }))}
+                options={sortOptions(availableTypes.map(t => ({ label: t, value: t })))}
                 selectedValues={obsTypes}
                 onChange={setObsTypes}
                 placeholder="Todos"
@@ -9051,7 +9057,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
               <Label className="text-[11px] text-slate-400">Ano</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs border-slate-200 bg-white"
-                options={availableYears.map(y => ({ label: y, value: y }))}
+                options={sortOptions(availableYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
                 selectedValues={obsYears}
                 onChange={setObsYears}
                 placeholder="Todos"
@@ -9062,7 +9068,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
               <Label className="text-[11px] text-slate-400">Invoice / NF</Label>
               <MultiSelectDropdown
                 className="h-8 text-xs border-slate-200 bg-white"
-                options={availableInvoices.map(i => ({ label: i, value: i }))}
+                options={sortOptions(availableInvoices.map(i => ({ label: i, value: i })))}
                 selectedValues={obsInvoices}
                 onChange={setObsInvoices}
                 placeholder="Todos"
@@ -9421,7 +9427,7 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-                {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map((license) => (
+                {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l }))).map(({ value: license }) => (
                   <tr key={license.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-4 font-medium text-slate-900">{license.nomelicenciador || `ID: ${license.id.slice(0,5)}`}</td>
                     <td className="px-4 py-4 text-blue-600 font-medium">{license.nomeagente || '-'}</td>
@@ -9538,8 +9544,8 @@ function EditLineDialog({ line, licenses, contracts, products, categories, trigg
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {[...licenses].sort((a, b) => (a.nomelicenciador || a.id).localeCompare(b.nomelicenciador || b.id)).map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador || `ID: ${l.id.slice(0,5)}`}</SelectItem>
+                  {sortOptions(licenses.map(l => ({ label: l.nomelicenciador || `ID: ${l.id.slice(0,5)}`, value: l.id }))).map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -9714,11 +9720,14 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
     setCollapsedLicenses(allCollapsed);
   };
 
-  const groupedLines = licenses.map(license => ({
-    license,
-    lines: lines.filter(l => l.licenseId === license.id)
-  })).filter(group => group.lines.length > 0)
-     .sort((a, b) => (a.license.nomelicenciador || a.license.id).localeCompare(b.license.nomelicenciador || b.license.id));
+  const groupedLines = sortOptions(licenses.map(license => ({
+    label: license.nomelicenciador || license.id,
+    value: {
+      license,
+      lines: lines.filter(l => l.licenseId === license.id)
+    }
+  }))).filter(group => group.value.lines.length > 0)
+     .map(group => group.value);
 
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -9769,7 +9778,7 @@ function LinesView({ lines, licenses, contracts, products, categories, isAdmin }
                     </TableRow>
                     
                     {/* Line Rows */}
-                    {!isCollapsed && groupLines.sort((a, b) => (a.nomelinha || a.id).localeCompare(b.nomelinha || b.id)).map((line) => (
+                    {!isCollapsed && sortOptions(groupLines.map(line => ({ label: line.nomelinha || line.id, value: line }))).map(({ value: line }) => (
                       <TableRow key={line.id} className="hover:bg-slate-50/30">
                         <TableCell className="pl-10">
                           <EditLineDialog 
@@ -9837,7 +9846,8 @@ function ProductCategoriesView({ categories, isAdmin }: { categories: ProductCat
   const [editingValue, setEditingValue] = useState('');
   const [pageSize, setPageSize] = useState<number>(20);
 
-  const sortedCategories = [...categories].sort((a, b) => (a.nomeCategoriaProduto || '').localeCompare(b.nomeCategoriaProduto || ''));
+  const sortedCategories = sortOptions(categories.map(c => ({ label: c.nomeCategoriaProduto || '', value: c })))
+    .map(opt => opt.value);
 
   const handleAdd = async () => {
     if (!newCategory) return;
@@ -9971,6 +9981,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   const [prodSummaryCategoryId, setProdSummaryCategoryId] = useState<string>('all');
   const [prodSummaryValueType, setProdSummaryValueType] = useState<'produced' | 'reprogrammed' | 'cost'>('produced');
   const [prodSummaryViewMode, setProdSummaryViewMode] = useState<'monthly' | 'quarterly'>('monthly');
+  const [prodSummaryLaunchYears, setProdSummaryLaunchYears] = useState<string[]>([]);
   const [expandedProdYears, setExpandedProdYears] = useState<number[]>([]);
 
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -10026,7 +10037,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     return 0;
   }), [filteredProducts, sortConfig, categories, lines, licenses]);
 
-  const uniqueYears = Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))).sort();
+  const uniqueYears = sortOptions(Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))));
 
   const prodSummaryData = React.useMemo(() => {
     const filtered = products.filter(p => {
@@ -10036,6 +10047,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
       if (prodSummaryLicenseIds.length > 0 && !prodSummaryLicenseIds.includes(licId || '')) return false;
       if (prodSummaryLineIds.length > 0 && !prodSummaryLineIds.includes(p.lineId)) return false;
       if (prodSummaryCategoryId !== 'all' && p.categoryId !== prodSummaryCategoryId) return false;
+      if (prodSummaryLaunchYears.length > 0 && !prodSummaryLaunchYears.includes(String(p.launchYear))) return false;
       return true;
     });
 
@@ -10066,11 +10078,11 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
       }
     });
 
-    const years = Array.from(yearsSet).sort((a, b) => b - a); // Newest years first
+    const years = Array.from(yearsSet).sort((a, b) => a - b); // Oldest years first
     const months = Array.from({ length: 12 }, (_, i) => i + 1);
 
     return { years, months, grid };
-  }, [products, prodSummaryLicenseIds, prodSummaryLineIds, prodSummaryCategoryId, prodSummaryValueType, lines, licenses, categories]);
+  }, [products, prodSummaryLicenseIds, prodSummaryLineIds, prodSummaryCategoryId, prodSummaryLaunchYears, prodSummaryValueType, lines, licenses, categories]);
 
   const toggleSelectAll = () => {
     if (selectedProductIds.length === filteredProducts.length) {
@@ -10113,8 +10125,6 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               </div>
               
               <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500 bg-emerald-50/10 px-3 py-1 rounded-full border border-emerald-100">
-                <span>{prodSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
-                <span className="w-1 h-1 rounded-full bg-emerald-300" />
                 <span>
                    {prodSummaryValueType === 'produced' ? 'Quantidades de Produção' : 
                     prodSummaryValueType === 'reprogrammed' ? 'Quantidades de Reprogramação' : 
@@ -10125,11 +10135,11 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
             
             {/* Filters */}
             <div className="flex flex-wrap items-end gap-3 w-full">
-              <div className="min-w-[180px] flex-1 space-y-1">
+                              <div className="min-w-[180px] flex-1 space-y-1">
                 <Label className="text-[10px] text-slate-400 font-medium">Licenciadores</Label>
                 <MultiSelectDropdown
                   className="h-7 text-[10px] bg-white"
-                  options={licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))}
+                  options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
                   selectedValues={prodSummaryLicenseIds}
                   onChange={setProdSummaryLicenseIds}
                   placeholder="Todos"
@@ -10140,7 +10150,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 <Label className="text-[10px] text-slate-400 font-medium">Linhas</Label>
                 <MultiSelectDropdown
                   className="h-7 text-[10px] bg-white"
-                  options={lines.filter(l => prodSummaryLicenseIds.length === 0 || prodSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id }))}
+                  options={sortOptions(lines.filter(l => prodSummaryLicenseIds.length === 0 || prodSummaryLicenseIds.includes(l.licenseId)).map(l => ({ label: l.nomelinha, value: l.id })))}
                   selectedValues={prodSummaryLineIds}
                   onChange={setProdSummaryLineIds}
                   placeholder="Todas"
@@ -10151,10 +10161,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 <Label className="text-[10px] text-slate-400 font-medium">Categorias</Label>
                 <SearchableSelect
                   className="h-7 text-[10px] w-full bg-white"
-                  options={[
+                  options={sortOptions([
                     { label: "Todas as Categorias", value: "all" },
                     ...categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))
-                  ]}
+                  ])}
                   value={prodSummaryCategoryId}
                   onValueChange={setProdSummaryCategoryId}
                   placeholder="Todas"
@@ -10162,16 +10172,14 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               </div>
 
               <div className="min-w-[120px] flex-1 space-y-1">
-                <Label className="text-[10px] text-slate-400 font-medium">Período</Label>
-                <Select value={prodSummaryViewMode} onValueChange={(v: any) => setProdSummaryViewMode(v)}>
-                  <SelectTrigger className="h-7 text-[10px] w-full bg-white">
-                    <span>{prodSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
-                  </SelectTrigger>
-                  <SelectContent className="z-[9999]">
-                    <SelectItem value="monthly">Mensal</SelectItem>
-                    <SelectItem value="quarterly">Trimestral</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-[10px] text-slate-400 font-medium">Ano de lançamento</Label>
+                <MultiSelectDropdown
+                  className="h-7 text-[10px] bg-white"
+                  options={sortOptions(uniqueYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
+                  selectedValues={prodSummaryLaunchYears}
+                  onChange={setProdSummaryLaunchYears}
+                  placeholder="Todos"
+                />
               </div>
 
               <div className="min-w-[180px] flex-1 space-y-1">
@@ -10315,7 +10323,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               {prodSummaryData.years.length > 0 && (
                 <tr className="bg-slate-100/50 font-bold border-t-2 border-slate-200">
                   <td className="px-3 py-3 border-r border-slate-200 text-center text-slate-700 uppercase tracking-wider">
-                    Total Geral
+                    Totais
                   </td>
                   {(prodSummaryViewMode === 'monthly' ? Array.from({length: 12}) : Array.from({length: 4})).map((_, i) => {
                     let colTotal = 0;
@@ -10367,10 +10375,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               <Label className="text-xs text-slate-500">Categoria</Label>
               <SearchableSelect
                 className="h-8 text-xs min-w-[150px]"
-                options={[
+                options={sortOptions([
                   { label: "Todas as Categorias", value: "all" },
-                  ...[...categories].sort((a,b)=>(a.nomeCategoriaProduto||'').localeCompare(b.nomeCategoriaProduto||'')).map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))
-                ]}
+                  ...categories.map(c => ({ label: c.nomeCategoriaProduto, value: c.id }))
+                ])}
                 value={filterCategory}
                 onValueChange={setFilterCategory}
                 placeholder="Todas"
@@ -10380,10 +10388,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               <Label className="text-xs text-slate-500">Linha</Label>
               <SearchableSelect
                 className="h-8 text-xs min-w-[150px]"
-                options={[
+                options={sortOptions([
                   { label: "Todas as Linhas", value: "all" },
-                  ...[...lines].sort((a,b)=>(a.nomelinha||'').localeCompare(b.nomelinha||'')).map(l => ({ label: l.nomelinha, value: l.id }))
-                ]}
+                  ...lines.map(l => ({ label: l.nomelinha, value: l.id }))
+                ])}
                 value={filterLine}
                 onValueChange={setFilterLine}
                 placeholder="Todas"
@@ -10393,10 +10401,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               <Label className="text-xs text-slate-500">Licenciador</Label>
               <SearchableSelect
                 className="h-8 text-xs min-w-[150px]"
-                options={[
+                options={sortOptions([
                   { label: "Todos os Licenciadores", value: "all" },
-                  ...[...licenses].sort((a,b)=>(a.nomelicenciador||'').localeCompare(b.nomelicenciador||'')).map(l => ({ label: l.nomelicenciador, value: l.id }))
-                ]}
+                  ...licenses.map(l => ({ label: l.nomelicenciador, value: l.id }))
+                ])}
                 value={filterLicense}
                 onValueChange={setFilterLicense}
                 placeholder="Todos"
@@ -10406,10 +10414,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
               <Label className="text-xs text-slate-500">Ano</Label>
               <SearchableSelect
                 className="h-8 text-xs min-w-[100px]"
-                options={[
+                options={sortOptions([
                   { label: "Todos", value: "all" },
                   ...uniqueYears.map(y => ({ label: String(y), value: String(y) }))
-                ]}
+                ], 'number')}
                 value={filterYear}
                 onValueChange={setFilterYear}
                 placeholder="Todos"
