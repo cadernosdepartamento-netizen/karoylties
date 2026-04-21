@@ -7,7 +7,7 @@ import React, { useState, useEffect, Component, ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { auth, db, storage, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType, uploadFile } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch, increment } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   LayoutDashboard, 
@@ -238,9 +238,26 @@ interface RoyaltyReport {
   netValue: number;
   royaltyRate?: number;
   royaltyValue: number;
+  cmfValue?: number; // Fundo de marketing calculado (taxa_cmf * netValue)
   productName?: string;
   calculationType?: string;
 }
+interface ObligationRecord {
+  id: string;
+  contractId: string;
+  licenseId: string;
+  type: string; // "CMF", "Garantia Mínima", etc.
+  year: number;
+  month: number;
+  amount: number;
+  currency: string;
+  status: string; // 'pending', 'paid'
+  notes?: string;
+  dueDate?: string;
+  createdAt: any;
+  updatedAt?: any;
+}
+
 interface Payment {
   id: string;
   contractId: string;
@@ -455,6 +472,7 @@ function MainApp() {
   const [netSales, setNetSales] = useState<Sale[]>([]);
   const [wholeSales, setWholeSales] = useState<Sale[]>([]);
   const [fobSales, setFobSales] = useState<Sale[]>([]);
+  const [dbObligations, setDbObligations] = useState<ObligationRecord[]>([]);
 
   // Sales Action States
   const [isDeletingSales, setIsDeletingSales] = useState(false);
@@ -584,6 +602,10 @@ function MainApp() {
       setFobSales(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'fobsales'));
 
+    const unsubObligations = onSnapshot(collection(db, 'cronograma_obrigacoes'), (snap) => {
+      setDbObligations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ObligationRecord)));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'cronograma_obrigacoes'));
+
     return () => {
       unsubLicenses();
       unsubLines();
@@ -596,8 +618,184 @@ function MainApp() {
       unsubNetSales();
       unsubWholeSales();
       unsubFobSales();
+      unsubObligations();
     };
   }, [user]);
+
+  const runCMFMigration = async () => {
+    if (!confirm("Deseja retroagir e calcular o CMF de todos os relatórios da base? Isso sobrescreverá valores vazios.")) return;
+    
+    try {
+      const batchList = [];
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+      
+      for (const report of reports) {
+        const contract = contracts.find(c => c.id === report.contractId);
+        if (!contract) continue;
+
+        const cmfRate = contract.hasMarketingFund && contract.marketingFundRate ? contract.marketingFundRate : 0;
+        if (cmfRate === 0) continue; 
+
+        // Always update the cmf field locally
+        const newCmfValue = report.netValue * cmfRate;
+        const ref = doc(db, 'reports', report.id);
+        currentBatch.update(ref, { cmfValue: newCmfValue });
+        opCount++;
+        
+        // CMF Generation for isolated payments (without Minimum Guarantee Installments)
+        if (!contract.hasMarketingFundInstallments) {
+           const deadlineDays = parseInt(contract.paymentDeadline?.replace(/\D/g, '') || contract.reportingDeadline?.replace(/\D/g, '') || "15", 10);
+           const dueDate = new Date(report.year, report.month, deadlineDays); 
+           const paymentId = `cmf-rep-${report.contractId}-${report.year}-${report.month}-${report.lineId}-${report.productId || "geral"}`;
+           const pRef = doc(db, 'payments', paymentId);
+           currentBatch.set(pRef, {
+               contractId: report.contractId,
+               licenseId: contract.licenseId,
+               type: 'marketing',
+               amount: newCmfValue,
+               currency: contract.currency || 'BRL',
+               date: '',
+               dueDate: dueDate.toISOString().split('T')[0],
+               status: 'pending',
+               notes: `CMF Apuração ${String(report.month).padStart(2,'0')}/${report.year}`,
+               updatedAt: serverTimestamp()
+           }, { merge: true });
+           opCount++;
+        }
+        
+        if (opCount >= 400) {
+          batchList.push(currentBatch);
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+      
+      if (opCount > 0) batchList.push(currentBatch);
+      for (const b of batchList) await b.commit();
+      
+      toast.success("Migração Retroativa de CMF concluída com sucesso!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro na migração de CMF. Verifique o console.");
+    }
+  };
+
+  const runMktMigration = async () => {
+    if (!confirm("Deseja migrar todos os lançamentos de Fundo de Marketing (CMF) não liquidados para a nova visualização de Cronograma consolidada? Essa ação apagará os lançamentos individuais de CMF do Controle de Pagamentos.")) return;
+
+    try {
+      const cnfPayments = payments.filter(p => p.type === 'marketing');
+      
+      if (cnfPayments.length === 0) {
+        toast.info("Não há pagamentos de CMF individuais na base para migrar.");
+        return;
+      }
+
+      const groupedCmf = new Map<string, {
+        contractId: string;
+        licenseId: string;
+        year: number;
+        month: number;
+        totalAmount: number;
+        currency: string;
+        dueDate: string;
+        notes: string[];
+        idsToDelete: string[];
+      }>();
+
+      cnfPayments.forEach(p => {
+        let year = p.year ? Number(p.year) : 0;
+        let month = p.month ? Number(p.month) : 0;
+        const noteMatch = p.notes?.match(/Apuração (\d{2})\/(\d{4})/);
+        if (noteMatch) {
+          month = parseInt(noteMatch[1], 10);
+          year = parseInt(noteMatch[2], 10);
+        } else if (p.dueDate && p.dueDate.length === 10) {
+          const parts = p.dueDate.split('-');
+          year = parseInt(parts[0], 10);
+          if (month === 0) month = parseInt(parts[1], 10) - 1; 
+          if (month === 0) { month = 12; year -= 1; }
+        }
+
+        const periodKey = `${p.contractId}-${year}-${String(month).padStart(2, '0')}`;
+        
+        if (!groupedCmf.has(periodKey)) {
+          groupedCmf.set(periodKey, {
+            contractId: p.contractId,
+            licenseId: p.licenseId || '',
+            year,
+            month,
+            totalAmount: 0,
+            currency: p.currency || 'BRL',
+            dueDate: p.dueDate || '',
+            notes: [],
+            idsToDelete: []
+          });
+        }
+
+        const group = groupedCmf.get(periodKey)!;
+        group.totalAmount += p.amount;
+        group.idsToDelete.push(p.id);
+        if (p.notes && !group.notes.includes(p.notes)) {
+           group.notes.push(p.notes);
+        }
+      });
+
+      const batchList = [];
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const [key, data] of groupedCmf.entries()) {
+        const obligationId = `${data.contractId}-${data.year}-${String(data.month).padStart(2, '0')}-CMF`;
+        const oRef = doc(collection(db, 'cronograma_obrigacoes'), obligationId);
+        
+        currentBatch.set(oRef, {
+           contractId: data.contractId,
+           licenseId: data.licenseId,
+           type: 'CMF',
+           year: data.year,
+           month: data.month,
+           amount: increment(data.totalAmount), 
+           currency: data.currency,
+           dueDate: data.dueDate,
+           status: 'pending',
+           notes: `Migrado. ${data.notes.join(' | ')}`,
+           updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        opCount++;
+        if (opCount >= 500) {
+          batchList.push(currentBatch);
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+
+        for (const pId of data.idsToDelete) {
+          currentBatch.delete(doc(db, 'payments', pId));
+          opCount++;
+          if (opCount >= 500) {
+            batchList.push(currentBatch);
+            currentBatch = writeBatch(db);
+            opCount = 0;
+          }
+        }
+      }
+
+      if (opCount > 0) {
+        batchList.push(currentBatch);
+      }
+
+      for (const batch of batchList) {
+        await batch.commit();
+      }
+
+      toast.success("Pagamentos de CMF consolidados com sucesso em obrigações!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao migrar CMF.");
+    }
+  };
 
   if (loading) {
     return (
@@ -812,6 +1010,12 @@ function MainApp() {
                 <div className="flex items-center gap-2">
                   <ImportReportsDialog contracts={contracts} lines={lines} products={products} licenses={licenses} />
                   <AddReportDialog contracts={contracts} lines={lines} products={products} licenses={licenses} sales={sales} netSales={netSales} wholeSales={wholeSales} fobSales={fobSales} />
+                  <Button variant="outline" className="border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100" onClick={runCMFMigration}>
+                    <Database size={16} className="mr-2" /> Retrocessar CMF
+                  </Button>
+                  <Button variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" onClick={runMktMigration}>
+                    <Database size={16} className="mr-2" /> Migrar CMF
+                  </Button>
                 </div>
               )}
               {activeTab === 'payments' && isAdmin && (
@@ -858,7 +1062,7 @@ function MainApp() {
             {activeTab === 'sales_compras' && <SalesView activeTab="sales_compras" sales={wholeSales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
             {activeTab === 'sales_fob' && <SalesView currencyView={currencyView} setCurrencyView={setCurrencyView} activeTab="sales_fob" sales={fobSales} licenses={licenses} lines={lines} categories={productCategories} products={products} contracts={contracts} isAdmin={isAdmin} />}
             {activeTab === 'reports' && <ReportsView reports={reports} contracts={contracts} lines={lines} products={products} licenses={licenses} isAdmin={isAdmin} />}
-            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} lines={lines} reports={reports} isAdmin={isAdmin} />}
+            {activeTab === 'payments' && <PaymentsView payments={payments} contracts={contracts} licenses={licenses} lines={lines} reports={reports} dbObligations={dbObligations} isAdmin={isAdmin} />}
             {activeTab === 'settings' && <SettingsView currentUser={user} isAdmin={isAdmin} />}
           </div>
         </main>
@@ -4821,8 +5025,21 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
       let currentBatch = writeBatch(db);
       let opCount = 0;
 
+      const cmfByPeriod = new Map<string, { year: string, month: string, cmfTotal: number }>();
+
       for (const g of groups.values()) {
+        const cmfRate = selectedContract?.hasMarketingFund && selectedContract?.marketingFundRate ? selectedContract.marketingFundRate : 0;
+        const cmfValue = g.netValue * cmfRate;
         const royaltyValue = g.netValue * royaltyRate;
+
+        if (!selectedContract?.hasMarketingFundInstallments && cmfValue > 0) {
+            const periodKey = `${g.year}-${String(g.month).padStart(2, '0')}`;
+            if (!cmfByPeriod.has(periodKey)) {
+                cmfByPeriod.set(periodKey, { year: g.year, month: g.month, cmfTotal: 0 });
+            }
+            cmfByPeriod.get(periodKey)!.cmfTotal += cmfValue;
+        }
+
         const ref = doc(collection(db, 'reports'));
         currentBatch.set(ref, {
           contractId,
@@ -4840,17 +5057,47 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
           netValue: g.netValue,
           royaltyRate,
           royaltyValue,
+          cmfValue,
           calculationType: royaltyRateType === 'netSales1' ? 'Vendas' : 
                           royaltyRateType === 'netPurchases' ? 'Compras' : 
                           royaltyRateType === 'fob' ? 'FOB' : '',
           createdAt: serverTimestamp()
         });
+
         opCount++;
         if (opCount >= 500) {
           batchList.push(currentBatch);
           currentBatch = writeBatch(db);
           opCount = 0;
         }
+      }
+
+      // Upsert consolidated CMF to cronograma_obrigacoes
+      for (const [period, data] of cmfByPeriod.entries()) {
+          const deadlineDays = parseInt(selectedContract?.paymentDeadline?.replace(/\D/g, '') || selectedContract?.reportingDeadline?.replace(/\D/g, '') || "15", 10);
+          const dueDate = new Date(Number(data.year), Number(data.month), deadlineDays); // Next month
+          const obligationId = `${contractId}-${data.year}-${String(data.month).padStart(2, '0')}-CMF`;
+          const oRef = doc(collection(db, 'cronograma_obrigacoes'), obligationId);
+          currentBatch.set(oRef, {
+             contractId,
+             licenseId,
+             type: 'CMF',
+             year: Number(data.year),
+             month: Number(data.month),
+             amount: increment(data.cmfTotal), // Add to balance
+             currency: selectedContract?.currency || 'BRL',
+             dueDate: dueDate.toISOString().split('T')[0],
+             status: 'pending',
+             notes: `CMF Apuração ${period}`, // Consolidado
+             updatedAt: serverTimestamp()
+          }, { merge: true });
+
+          opCount++;
+          if (opCount >= 500) {
+            batchList.push(currentBatch);
+            currentBatch = writeBatch(db);
+            opCount = 0;
+          }
       }
 
       if (opCount > 0) {
@@ -4899,7 +5146,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
     (selectedLineIds.length === 0 || selectedLineIds.includes(p.lineId)) && 
     (selectedLaunchYears.length === 0 || selectedLaunchYears.includes(String(p.launchYear))) &&
     (
-        royaltyRateType === 'netSales1' ? sales.some(s => s.sku === p.sku) :
+        royaltyRateType === 'netSales1' ? netSales.some(s => s.sku === p.sku) :
         royaltyRateType === 'netPurchases' ? wholeSales.some(s => s.sku === p.sku) :
         royaltyRateType === 'fob' ? fobSales.some(s => s.sku === p.sku) :
         true
@@ -4968,6 +5215,16 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
 
           {contractId && selectedContract && (
             <>
+              {selectedContract.hasMarketingFund && selectedContract.marketingFundRate && selectedContract.marketingFundRate > 0 ? (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-3 text-sm flex items-start gap-2 mb-2">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+                  <p>
+                    <strong>Atenção:</strong> Este contrato possui <strong>Fundo de Marketing (CMF)</strong>. 
+                    Será calculado aplicando <strong>{(selectedContract.marketingFundRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</strong> sobre o Valor Líquido Total deste relatório.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="space-y-2">
                 <Label>Taxa de Royalties (do Contrato)</Label>
                 <Select onValueChange={setRoyaltyRateType} value={royaltyRateType}>
@@ -5037,10 +5294,11 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
             <div className="space-y-2">
               <Label className="text-xs text-slate-500 font-semibold uppercase">Produtos a serem apurados</Label>
               <MultiSelectDropdown
-                options={sortOptions(availableProducts.map(p => ({ label: `${p.sku} - ${p.name}`, value: String(p.sku) })))}
+                options={sortOptions(Array.from(new Map(availableProducts.map(p => [String(p.sku), p])).values()).map(p => ({ label: `${p.sku} - ${p.name}`, value: String(p.sku) })))}
                 selectedValues={selectedProductSkus}
                 onChange={setSelectedProductSkus}
                 placeholder="Selecione os produtos"
+                contentClassName="w-max sm:w-max min-w-[var(--radix-popover-trigger-width)] max-w-lg sm:max-w-2xl"
               />
               <p className="text-[10px] text-slate-400">Mostrando {availableProducts.length} produtos disponíveis.</p>
             </div>
@@ -6359,6 +6617,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
       
       if (!groups.has(key)) {
         groups.set(key, {
+          id: key,
           sku: cleanSku,
           description: s.description,
           month: m,
@@ -6989,7 +7248,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <tbody className="divide-y divide-slate-200">
                 {viewMode === 'grouped' ? (
                   sortedGroupedSales.slice(0, pageSize).map((group) => (
-                    <tr key={group.sku + group.month + group.year} className="hover:bg-slate-50 transition-colors">
+                    <tr key={group.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3"></td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.month}/{group.year}</td>
                       <td className="px-4 py-2 text-center">
@@ -7322,7 +7581,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           cofins: 0,
           ipi: 0,
           netValue: 0,
-          royaltyValue: 0
+          royaltyValue: 0,
+          cmfValue: 0
         });
       } else {
         groups.get(key).reportIds.push(r.id);
@@ -7337,17 +7597,30 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       g.ipi += r.ipi || 0;
       g.netValue += r.netValue || 0;
       g.royaltyValue += r.royaltyValue || 0;
+      g.cmfValue += r.cmfValue || 0;
     });
 
-    return Array.from(groups.values()).sort((a, b) => {
+    return Array.from(groups.values()).map(row => {
+      const l = licenses.find(x => x.id === row.licenseId);
+      const ln = lines.find(x => x.id === row.lineId);
+      const contract = contracts.find(c => c.id === row.contractId);
+      return {
+        ...row,
+        licenseName: l?.nomelicenciador || '',
+        lineName: ln?.nomelinha || '',
+        contractNumber: contract?.contractNumber || ''
+      };
+    }).sort((a, b) => {
       if (b.year !== a.year) return b.year - a.year;
       return b.month - a.month;
     });
-  }, [filteredReports]);
+  }, [filteredReports, licenses, lines, contracts]);
+
+  const { items: sortedTableData, requestSort, sortConfig } = useSortableData(tableData, { key: 'year', direction: 'desc' });
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedIds(tableData.map((r: any) => r.id));
+      setSelectedIds(sortedTableData.map((r: any) => r.id));
     } else {
       setSelectedIds([]);
     }
@@ -7773,38 +8046,39 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
         </CardHeader>
         
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[440px] scrollbar-thin scrollbar-thumb-slate-200">
             <table className="w-full text-sm text-left border-t border-slate-200 min-w-max">
-              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-4 py-3 w-10">
                     <input 
                       type="checkbox" 
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      checked={selectedIds.length === tableData.length && tableData.length > 0}
+                      checked={selectedIds.length === sortedTableData.length && sortedTableData.length > 0}
                       onChange={handleSelectAll}
                     />
                   </th>
-                  <th className="px-4 py-3 whitespace-nowrap">Ano</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Mês</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Licenciador</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Linha</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Contrato</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">Quantidade</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Total</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">ICMS</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">PIS</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">COFINS</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">IPI</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Líquido</th>
-                  <th className="px-1 py-3 text-right whitespace-normal leading-tight w-[60px]">Taxa Royalties</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">Valor Royalties</th>
-                  <th className="px-4 py-3 whitespace-nowrap">Tipo</th>
+                  <SortableHeader label="Ano" sortKey="year" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Mês" sortKey="month" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Contrato" sortKey="contractNumber" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Quantidade" sortKey="quantity" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Valor Total" sortKey="totalValue" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="ICMS" sortKey="icms" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="PIS" sortKey="pis" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="COFINS" sortKey="cofins" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="IPI" sortKey="ipi" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Valor Líquido" sortKey="netValue" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Taxa Royalties" sortKey="royaltyRate" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Valor Royalties" sortKey="royaltyValue" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Tipo" sortKey="calculationType" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="CMF" sortKey="cmfValue" currentSort={sortConfig} onSort={requestSort} />
                   <th className="px-4 py-3 text-center whitespace-nowrap">Detalhes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {tableData.slice(0, pageSize).map((row, i) => {
+                {sortedTableData.slice(0, pageSize).map((row, i) => {
                   const l = licenses.find(x => x.id === row.licenseId);
                   const ln = lines.find(x => x.id === row.lineId);
                   const contract = contracts.find(c => c.id === row.contractId);
@@ -7854,6 +8128,9 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                         {row.royaltyValue > 0 ? row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap font-medium uppercase italic bg-slate-50/30">{row.calculationType || '-'}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap bg-indigo-50/50">
+                        {row.cmfValue > 0 ? row.cmfValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                      </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <button onClick={downloadCSV} className="text-blue-600 hover:text-blue-800">
                           <FileDown size={16} />
@@ -7862,28 +8139,31 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                     </tr>
                   )
                 })}
-                {tableData.length === 0 && (
+                {sortedTableData.length === 0 && (
                   <tr>
                     <td colSpan={17} className="px-4 py-12 text-center text-slate-400">Nenhum relatório encontrado no banco de dados com os filtros atuais.</td>
                   </tr>
                 )}
               </tbody>
-              {tableData.length > 0 && (
-                <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800">
+              {sortedTableData.length > 0 && (
+                <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-slate-800 sticky bottom-0 z-10 shadow-[0_-1px_2px_rgba(0,0,0,0.05)]">
                   <tr>
                     <td colSpan={6} className="px-4 py-4 text-right whitespace-nowrap text-sm">TOTAL</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{tableData.reduce((acc, r)=>acc+r.quantity, 0).toLocaleString('pt-BR')}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{tableData.reduce((acc, r)=>acc+r.totalValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.icms, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.pis, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.cofins, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.ipi, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.netValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{sortedTableData.reduce((acc, r)=>acc+r.quantity, 0).toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">{sortedTableData.reduce((acc, r)=>acc+r.totalValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{sortedTableData.reduce((acc, r)=>acc+r.icms, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{sortedTableData.reduce((acc, r)=>acc+r.pis, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{sortedTableData.reduce((acc, r)=>acc+r.cofins, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{sortedTableData.reduce((acc, r)=>acc+r.ipi, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{sortedTableData.reduce((acc, r)=>acc+r.netValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-1 py-4 text-right whitespace-nowrap text-sm">-</td>
                     <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">
-                      {tableData.reduce((acc, r)=>acc+r.royaltyValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {sortedTableData.reduce((acc, r)=>acc+r.royaltyValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td></td>
+                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm font-bold text-indigo-700 bg-indigo-50/50">
+                      {sortedTableData.reduce((acc, r)=>acc+(r.cmfValue||0), 0) > 0 ? sortedTableData.reduce((acc, r)=>acc+(r.cmfValue||0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                    </td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -8301,12 +8581,141 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   );
 }
 
-function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }: {
+interface FinanceFiltersProps {
+  filters: {
+    licenseIds: string[];
+    contractIds: string[];
+    types: string[];
+    years: string[];
+    invoices: string[];
+    statuses: string[];
+    paymentDate: string;
+  };
+  setFilters: React.Dispatch<React.SetStateAction<FinanceFiltersProps['filters']>>;
+  licenses: License[];
+  contracts: Contract[];
+  availableTypes: string[];
+  availableYears: string[];
+  availableInvoices: string[];
+}
+
+function FinanceFilters({ filters, setFilters, licenses, contracts, availableTypes, availableYears, availableInvoices }: FinanceFiltersProps) {
+  return (
+    <div className="flex flex-wrap items-end gap-3 w-full animate-in fade-in duration-500">
+      <div className="min-w-[180px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Licenciador</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
+          selectedValues={filters.licenseIds}
+          onChange={(val) => setFilters(prev => ({ ...prev, licenseIds: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[150px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Contratos</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={sortOptions(contracts
+            .filter(c => filters.licenseIds.length === 0 || filters.licenseIds.includes(c.licenseId))
+            .map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
+          )}
+          selectedValues={filters.contractIds}
+          onChange={(val) => setFilters(prev => ({ ...prev, contractIds: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[150px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Tipo</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={sortOptions(availableTypes.map(t => ({ label: t, value: t })))}
+          selectedValues={filters.types}
+          onChange={(val) => setFilters(prev => ({ ...prev, types: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[100px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Ano</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={sortOptions(availableYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
+          selectedValues={filters.years}
+          onChange={(val) => setFilters(prev => ({ ...prev, years: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[120px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Invoice / NF</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={sortOptions(availableInvoices.map(i => ({ label: i, value: i })))}
+          selectedValues={filters.invoices}
+          onChange={(val) => setFilters(prev => ({ ...prev, invoices: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[120px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Status</Label>
+        <MultiSelectDropdown
+          className="h-8 text-xs border-slate-200 bg-white"
+          options={[
+            { label: 'Pago', value: 'paid' },
+            { label: 'Pendente', value: 'pending' }
+          ]}
+          selectedValues={filters.statuses}
+          onChange={(val) => setFilters(prev => ({ ...prev, statuses: val }))}
+          placeholder="Todos"
+        />
+      </div>
+
+      <div className="min-w-[120px] flex-1 space-y-1">
+        <Label className="text-[11px] text-slate-400">Data de Pagamento</Label>
+        <div className="relative">
+          <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+          <Input 
+            className="h-8 text-xs pl-8 border-slate-200 bg-white"
+            placeholder="DD/MM/AAAA" 
+            value={filters.paymentDate}
+            onChange={(e) => setFilters(prev => ({ ...prev, paymentDate: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        className="h-8 px-2 text-[10px] text-slate-400 hover:text-red-500"
+        onClick={() => {
+          setFilters({
+            licenseIds: [],
+            contractIds: [],
+            years: [],
+            types: [],
+            invoices: [],
+            statuses: [],
+            paymentDate: ''
+          });
+        }}
+      >
+        Limpar
+      </Button>
+    </div>
+  );
+}
+
+function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligations, isAdmin }: {
   payments: Payment[],
   contracts: Contract[],
   licenses: License[],
   lines: Line[],
   reports: RoyaltyReport[],
+  dbObligations: ObligationRecord[],
   isAdmin: boolean
 }) {
   // Summary Table States
@@ -8318,13 +8727,15 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
   const [expandedSummaryYears, setExpandedSummaryYears] = useState<number[]>([]);
 
   // Filter States
-  const [obsLicenseIds, setObsLicenseIds] = useState<string[]>([]);
-  const [obsContractIds, setObsContractIds] = useState<string[]>([]);
-  const [obsYears, setObsYears] = useState<string[]>([]);
-  const [obsTypes, setObsTypes] = useState<string[]>([]);
-  const [obsInvoices, setObsInvoices] = useState<string[]>([]);
-  const [obsStatuses, setObsStatuses] = useState<string[]>([]);
-  const [obsPaymentDate, setObsPaymentDate] = useState('');
+  const [filters, setFilters] = useState({
+    licenseIds: [] as string[],
+    contractIds: [] as string[],
+    years: [] as string[],
+    types: [] as string[],
+    invoices: [] as string[],
+    statuses: [] as string[],
+    paymentDate: ''
+  });
 
   // Calculate Obligations
   const obligations = React.useMemo(() => {
@@ -8460,7 +8871,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
           // Excess Marketing Fund if calculated via percentage
           if (contract.hasMarketingFund && contract.marketingFundRate && contract.marketingFundRate > 0) {
             const totalNetValue = contractReports.reduce((sum, r) => sum + (r.netValue || 0), 0);
-            const calculatedMktFund = totalNetValue * (contract.marketingFundRate / 100);
+            const calculatedMktFund = totalNetValue * contract.marketingFundRate;
             
             // Total of installments for this year - same improved matching logic
             const mktInstallmentsTotal = (contract.marketingFundInstallments || [])
@@ -8551,6 +8962,33 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
       }
     });
     
+    // Add obligations loaded from the actual db collection (cronograma_obrigacoes)
+    dbObligations.forEach(ob => {
+      const license = licenses.find(l => l.id === ob.licenseId);
+      const contract = contracts.find(c => c.id === ob.contractId);
+      list.push({
+        id: ob.id,
+        licenseId: ob.licenseId,
+        contractId: ob.contractId,
+        type: ob.type === 'CMF' ? 'Fundo de Marketing (CMF)' : ob.type,
+        license: license?.nomelicenciador || '-',
+        contract: contract?.contractNumber || contract?.id || ob.contractId,
+        installmentNumber: '-',
+        year: ob.year,
+        month: ob.month,
+        amount: ob.amount,
+        currency: ob.currency || 'BRL',
+        invoice: '-', // Real obligations table can be updated to support invoices and docs later
+        dueDate: ob.dueDate || '-',
+        status: ob.status || 'pending',
+        paymentDate: '-', 
+        documentUrl: undefined,
+        documentName: undefined,
+        rawDate: ob.dueDate || '',
+        notes: ob.notes
+      });
+    });
+
     // Sort based on user request: Licenciador, Contrato, MG antes de Fundo de marketing, Ano e parcela
     return list.sort((a, b) => {
       // 1. Licenciador (A-Z)
@@ -8660,68 +9098,83 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
     return { years, months, grid };
   }, [obligations, summaryLicenseIds, summaryContractIds, summaryTypes, summaryStatuses, summaryLineIds, contracts]);
 
-  // Unique years for filters
-  const availableYears = React.useMemo(() => {
-    const years = obligations.map(o => String(o.year)).filter(y => y && y !== '-');
-    return sortOptions(Array.from(new Set(years)));
-  }, [obligations]);
-
-  // Unique types for filters
-  const availableTypes = React.useMemo(() => {
-    const types = obligations.map(o => o.type);
-    return sortOptions(Array.from(new Set(types)));
-  }, [obligations]);
-
-  // Unique invoices for filters
-  const availableInvoices = React.useMemo(() => {
-    const invoices = obligations.map(o => String(o.invoice)).filter(i => i && i !== '-');
-    return sortOptions(Array.from(new Set(invoices)));
-  }, [obligations]);
-
-  // Filtered Obligations
-  const filteredObligations = React.useMemo(() => {
-    return obligations.filter(ob => {
-      // License filter
-      if (obsLicenseIds.length > 0 && !obsLicenseIds.includes(ob.licenseId)) return false;
-      
-      // Contract filter
-      if (obsContractIds.length > 0 && !obsContractIds.includes(ob.contractId)) return false;
-
-      // Year filter
-      if (obsYears.length > 0 && !obsYears.includes(String(ob.year))) return false;
-
-      // Type filter
-      if (obsTypes.length > 0 && !obsTypes.includes(ob.type)) return false;
-
-      // Invoice filter
-      if (obsInvoices.length > 0 && !obsInvoices.includes(String(ob.invoice))) return false;
-
-      // Status filter
-      if (obsStatuses.length > 0 && !obsStatuses.includes(ob.status)) return false;
-
-      // Payment Date filter
-      if (obsPaymentDate && !formatDateBR(ob.paymentDate).includes(obsPaymentDate)) return false;
-
-      return true;
-    });
-  }, [obligations, obsLicenseIds, obsContractIds, obsYears, obsTypes, obsInvoices, obsStatuses, obsPaymentDate]);
-
-  const { items: sortedObligations, requestSort: requestObligationSort, sortConfig: obligationSortConfig } = useSortableData(filteredObligations, { key: 'license', direction: 'asc' });
-
   const paymentsWithDisplayFields = React.useMemo(() => {
     return payments.map(payment => {
       const contract = contracts.find((c: any) => c.id === payment.contractId);
       const license = licenses.find((l: any) => l.id === (payment.licenseId || contract?.licenseId));
+      let dt = payment.dueDate || payment.date;
+      const year = dt ? new Date(dt).getFullYear().toString() : '-';
+
+      const typeDisplay = payment.type === 'mg' ? 'MG' : payment.type === 'excess' ? 'Royalties' : payment.type === 'marketing' ? 'Marketing' : 'Outros';
+      const mappedTypeForFilter = payment.type === 'mg' ? 'Mínimo Garantido (MG)' : payment.type === 'excess' ? 'Royalties por Excesso' : payment.type === 'marketing' ? 'Fundo de Marketing (CMF)' : 'Outros';
+
       return {
         ...payment,
         licenseName: license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-')),
         contractNumber: contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-')),
-        typeDisplay: payment.type === 'mg' ? 'MG' : payment.type === 'excess' ? 'Royalties' : payment.type === 'marketing' ? 'Marketing' : 'Outros'
+        typeDisplay,
+        mappedTypeForFilter,
+        year
       };
     });
   }, [payments, contracts, licenses]);
 
-  const { items: sortedPayments, requestSort: requestPaymentSort, sortConfig: paymentSortConfig } = useSortableData(paymentsWithDisplayFields, { key: 'date', direction: 'desc' });
+  // Unique years for filters
+  const availableYears = React.useMemo(() => {
+    const years = obligations.map(o => String(o.year)).filter(y => y && y !== '-');
+    const payYears = paymentsWithDisplayFields.map(p => String(p.year)).filter(y => y && y !== '-');
+    return sortOptions(Array.from(new Set([...years, ...payYears])));
+  }, [obligations, paymentsWithDisplayFields]);
+
+  // Unique types for filters
+  const availableTypes = React.useMemo(() => {
+    const types = obligations.map(o => o.type).filter(t => t);
+    const payTypes = paymentsWithDisplayFields.map(p => p.mappedTypeForFilter).filter(t => t);
+    return sortOptions(Array.from(new Set([...types, ...payTypes])));
+  }, [obligations, paymentsWithDisplayFields]);
+
+  // Unique invoices for filters
+  const availableInvoices = React.useMemo(() => {
+    const invoices = obligations.map(o => String(o.invoice)).filter(i => i && i !== '-');
+    const payInvoices = paymentsWithDisplayFields.map(p => String(p.invoice)).filter(i => i && i !== '-');
+    return sortOptions(Array.from(new Set([...invoices, ...payInvoices])));
+  }, [obligations, paymentsWithDisplayFields]);
+
+  // Filtered Obligations
+  const filteredObligations = React.useMemo(() => {
+    return obligations.filter(ob => {
+      if (filters.licenseIds.length > 0 && !filters.licenseIds.includes(ob.licenseId)) return false;
+      if (filters.contractIds.length > 0 && !filters.contractIds.includes(ob.contractId)) return false;
+      if (filters.years.length > 0 && !filters.years.includes(String(ob.year))) return false;
+      if (filters.types.length > 0 && !filters.types.includes(ob.type)) return false;
+      if (filters.invoices.length > 0 && !filters.invoices.includes(String(ob.invoice))) return false;
+      if (filters.statuses.length > 0 && !filters.statuses.includes(ob.status)) return false;
+      if (filters.paymentDate && !formatDateBR(ob.paymentDate).includes(filters.paymentDate)) return false;
+      return true;
+    });
+  }, [obligations, filters]);
+
+  const { items: sortedObligations, requestSort: requestObligationSort, sortConfig: obligationSortConfig } = useSortableData(filteredObligations, { key: 'license', direction: 'asc' });
+
+  // Filtered Payments
+  const filteredPayments = React.useMemo(() => {
+    return paymentsWithDisplayFields.filter(payment => {
+      const contract = contracts.find((c: any) => c.id === payment.contractId);
+      const licenseIdToFilter = payment.licenseId || contract?.licenseId;
+  
+      if (filters.licenseIds.length > 0 && !filters.licenseIds.includes(licenseIdToFilter || '')) return false;
+      if (filters.contractIds.length > 0 && !filters.contractIds.includes(payment.contractId || '')) return false;
+      if (filters.years.length > 0 && !filters.years.includes(String(payment.year))) return false;
+      if (filters.types.length > 0 && !filters.types.includes(payment.mappedTypeForFilter)) return false;
+      if (filters.invoices.length > 0 && !filters.invoices.includes(String(payment.invoice))) return false;
+      if (filters.statuses.length > 0 && !filters.statuses.includes(payment.status)) return false;
+      if (filters.paymentDate && !formatDateBR(payment.date).includes(filters.paymentDate)) return false;
+      return true;
+    });
+  }, [paymentsWithDisplayFields, contracts, filters]);
+
+  const { items: sortedPayments, requestSort: requestPaymentSort, sortConfig: paymentSortConfig } = useSortableData(filteredPayments, { key: 'date', direction: 'desc' });
+
 
   const handleConfirmPayment = async (paymentId: string) => {
     try {
@@ -8955,125 +9408,32 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
           </div>
 
           {/* Obligations Filters */}
-          <div className="flex flex-wrap items-end gap-3 w-full animate-in fade-in duration-500">
-            <div className="min-w-[180px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Licenciador</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={sortOptions(licenses.map(l => ({ label: l.nomelicenciador, value: l.id })))}
-                selectedValues={obsLicenseIds}
-                onChange={setObsLicenseIds}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[150px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Contratos</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={sortOptions(contracts
-                  .filter(c => obsLicenseIds.length === 0 || obsLicenseIds.includes(c.licenseId))
-                  .map(c => ({ label: c.contractNumber || `ID: ${c.id.slice(0,5)}`, value: c.id }))
-                )}
-                selectedValues={obsContractIds}
-                onChange={setObsContractIds}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[150px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Tipo</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={sortOptions(availableTypes.map(t => ({ label: t, value: t })))}
-                selectedValues={obsTypes}
-                onChange={setObsTypes}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[100px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Ano</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={sortOptions(availableYears.map(y => ({ label: String(y), value: String(y) })), 'number')}
-                selectedValues={obsYears}
-                onChange={setObsYears}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[120px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Invoice / NF</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={sortOptions(availableInvoices.map(i => ({ label: i, value: i })))}
-                selectedValues={obsInvoices}
-                onChange={setObsInvoices}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[120px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Status</Label>
-              <MultiSelectDropdown
-                className="h-8 text-xs border-slate-200 bg-white"
-                options={[
-                  { label: 'Pago', value: 'paid' },
-                  { label: 'Pendente', value: 'pending' }
-                ]}
-                selectedValues={obsStatuses}
-                onChange={setObsStatuses}
-                placeholder="Todos"
-              />
-            </div>
-
-            <div className="min-w-[120px] flex-1 space-y-1">
-              <Label className="text-[11px] text-slate-400">Data de Pagamento</Label>
-              <div className="relative">
-                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
-                <Input 
-                  className="h-8 text-xs pl-8 border-slate-200 bg-white"
-                  placeholder="DD/MM/AAAA" 
-                  value={obsPaymentDate}
-                  onChange={(e) => setObsPaymentDate(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-8 px-2 text-[10px] text-slate-400 hover:text-red-500"
-              onClick={() => {
-                setObsLicenseIds([]);
-                setObsContractIds([]);
-                setObsYears([]);
-                setObsTypes([]);
-                setObsInvoices([]);
-                setObsStatuses([]);
-                setObsPaymentDate('');
-              }}
-            >
-              Limpar
-            </Button>
-          </div>
+          <FinanceFilters 
+            filters={filters} 
+            setFilters={setFilters} 
+            licenses={licenses} 
+            contracts={contracts} 
+            availableTypes={availableTypes} 
+            availableYears={availableYears} 
+            availableInvoices={availableInvoices} 
+          />
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[440px] scrollbar-thin scrollbar-thumb-slate-200">
             <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
-              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-4 py-3">Licenciador</th>
-                  <th className="px-4 py-3">Contrato</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Nº Parcela</th>
-                  <th className="px-4 py-3">Ano</th>
-                  <th className="px-4 py-3">Valor</th>
-                  <th className="px-4 py-3">Vencimento</th>
-                  <th className="px-4 py-3">Invoice/NF</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3">Data Pgto</th>
+                  <SortableHeader label="Licenciador" sortKey="license" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Contrato" sortKey="contract" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Tipo" sortKey="type" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Nº Parcela" sortKey="installmentNumber" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Ano" sortKey="year" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Valor" sortKey="amount" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Vencimento" sortKey="dueDate" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Invoice/NF" sortKey="invoice" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Observações" sortKey="notes" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Status" sortKey="status" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Data Pgto" sortKey="paymentDate" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <th className="px-4 py-3 text-center">Doc</th>
                 </tr>
               </thead>
@@ -9084,12 +9444,13 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">{ob.type}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.installmentNumber}</td>
-                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.year}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.year}{ob.month ? ` - Mês ${ob.month}` : ''}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
                       {getCurrencySymbol(ob.currency)} {ob.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(ob.dueDate)}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.invoice}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap max-w-[180px]" title={ob.notes}>{ob.notes || '-'}</td>
                     <td className="px-4 py-3 text-center">
                       {ob.status === 'paid' ? (
                         <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[9px]">
@@ -9130,15 +9491,31 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, isAdmin }
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle>Controle de Pagamentos</CardTitle>
-          <CardDescription>Acompanhe parcelas de MG, royalties e fundo de marketing</CardDescription>
+      <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <CardHeader className="bg-slate-50 border-b border-slate-200 pb-3">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <CardTitle className="text-lg text-slate-800">Controle de Pagamentos</CardTitle>
+              <CardDescription>Acompanhe parcelas de MG, royalties e fundo de marketing</CardDescription>
+            </div>
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 font-bold">{filteredPayments.length} de {payments.length} Pagamentos</Badge>
+          </div>
+          
+          {/* Payments Filters */}
+          <FinanceFilters 
+            filters={filters} 
+            setFilters={setFilters} 
+            licenses={licenses} 
+            contracts={contracts} 
+            availableTypes={availableTypes} 
+            availableYears={availableYears} 
+            availableInvoices={availableInvoices} 
+          />
         </CardHeader>
-      <CardContent>
-        <div className="rounded-md border border-slate-200 overflow-x-auto">
+      <CardContent className="p-0">
+        <div className="rounded-md border border-slate-200 overflow-x-auto overflow-y-auto max-h-[440px] scrollbar-thin scrollbar-thumb-slate-200">
           <table className="w-full text-sm text-left min-w-[1200px]">
-            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-sm">
               <tr>
                 <SortableHeader label="Tipo" sortKey="typeDisplay" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={paymentSortConfig} onSort={requestPaymentSort} />

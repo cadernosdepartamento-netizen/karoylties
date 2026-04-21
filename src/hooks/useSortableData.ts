@@ -7,60 +7,70 @@ export interface SortConfig {
   direction: SortDirection;
 }
 
-export function useSortableData<T>(items: T[], config: SortConfig | null = null) {
+export function useSortableData<T>(items: T[], config: SortConfig | null = null, secondarySortConfig?: SortConfig) {
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(config);
 
   const sortedItems = useMemo(() => {
     let sortableItems = [...items];
     if (sortConfig !== null) {
       sortableItems.sort((a, b) => {
-        const aValue = a[sortConfig.key as keyof T];
-        const bValue = b[sortConfig.key as keyof T];
+        const compare = (key: string, dir: SortDirection) => {
+          const aVal = a[key as keyof T];
+          const bVal = b[key as keyof T];
 
-        // 1. Handle Null/Undefined (always put at bottom or top?)
-        if (aValue === null || aValue === undefined) return 1;
-        if (bValue === null || bValue === undefined) return -1;
+          if (aVal === null || aVal === undefined) return 1;
+          if (bVal === null || bVal === undefined) return -1;
 
-        // 2. Date Comparison
-        // Check if values are dates or valid ISO strings/formatted date strings
-        const isDate = (val: any) => {
-          if (val instanceof Date) return true;
-          if (typeof val === 'string') {
-            // Regex for common date formats in this app (YYYY-MM-DD or DD/MM/YYYY)
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$/;
-            if (dateRegex.test(val)) {
-                const d = new Date(val.includes('/') ? val.split('/').reverse().join('-') : val);
-                return !isNaN(d.getTime());
+          const isDate = (val: any) => {
+            if (val instanceof Date) return true;
+            if (typeof val === 'string') {
+              const dateRegex = /^\d{4}-\d{2}-\d{2}$|^\d{2}\/\d{2}\/\d{4}$/;
+              if (dateRegex.test(val)) {
+                  const d = new Date(val.includes('/') ? val.split('/').reverse().join('-') : val);
+                  return !isNaN(d.getTime());
+              }
             }
+            return false;
+          };
+
+          if (isDate(aVal) && isDate(bVal)) {
+            const dateA = aVal instanceof Date ? aVal : new Date(String(aVal).includes('/') ? String(aVal).split('/').reverse().join('-') : String(aVal));
+            const dateB = bVal instanceof Date ? bVal : new Date(String(bVal).includes('/') ? String(bVal).split('/').reverse().join('-') : String(bVal));
+            
+            return dir === 'asc' 
+              ? dateA.getTime() - dateB.getTime()
+              : dateB.getTime() - dateA.getTime();
           }
-          return false;
+
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return dir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
+
+          const strA = String(aVal);
+          const strB = String(bVal);
+
+          return dir === 'asc'
+            ? strA.localeCompare(strB, 'pt-BR', { sensitivity: 'base', numeric: true })
+            : strB.localeCompare(strA, 'pt-BR', { sensitivity: 'base', numeric: true });
         };
 
-        if (isDate(aValue) && isDate(bValue)) {
-          const dateA = aValue instanceof Date ? aValue : new Date(String(aValue).includes('/') ? String(aValue).split('/').reverse().join('-') : String(aValue));
-          const dateB = bValue instanceof Date ? bValue : new Date(String(bValue).includes('/') ? String(bValue).split('/').reverse().join('-') : String(bValue));
-          
-          return sortConfig.direction === 'asc' 
-            ? dateA.getTime() - dateB.getTime()
-            : dateB.getTime() - dateA.getTime();
+        const primaryResult = compare(sortConfig.key, sortConfig.direction);
+        if (primaryResult !== 0) return primaryResult;
+
+        // Custom hardcoded fallback for year -> month sorting, else generic fallback
+        if (sortConfig.key === 'year' && a && b && typeof a === 'object' && typeof b === 'object' && 'month' in a && 'month' in b) {
+          return compare('month', 'asc'); // Always ascending for secondary month sort, or match dir? We'll match dir.
+        }
+        
+        if (sortConfig.key === 'year' && sortConfig.key !== 'month' && secondarySortConfig) {
+             return compare(secondarySortConfig.key, secondarySortConfig.direction);
         }
 
-        // 3. Number Comparison
-        if (typeof aValue === 'number' && typeof bValue === 'number') {
-          return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-        }
-
-        // 4. String Comparison (localeCompare for pt-BR)
-        const strA = String(aValue);
-        const strB = String(bValue);
-
-        return sortConfig.direction === 'asc'
-          ? strA.localeCompare(strB, 'pt-BR', { sensitivity: 'base', numeric: true })
-          : strB.localeCompare(strA, 'pt-BR', { sensitivity: 'base', numeric: true });
+        return 0;
       });
     }
     return sortableItems;
-  }, [items, sortConfig]);
+  }, [items, sortConfig, secondarySortConfig]);
 
   const requestSort = (key: string) => {
     let direction: SortDirection = 'asc';

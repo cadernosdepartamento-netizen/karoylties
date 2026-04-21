@@ -10,9 +10,10 @@ interface MultiSelectDropdownProps {
   onChange: (values: string[]) => void;
   placeholder?: string;
   className?: string;
+  contentClassName?: string;
 }
 
-export function MultiSelectDropdown({ options, selectedValues, onChange, placeholder = "Selecione...", className }: MultiSelectDropdownProps) {
+export function MultiSelectDropdown({ options, selectedValues, onChange, placeholder = "Selecione...", className, contentClassName }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -67,7 +68,7 @@ export function MultiSelectDropdown({ options, selectedValues, onChange, placeho
       />
 
       <PopoverContent 
-        className="p-0 w-64 sm:w-80 max-h-96 flex flex-col overflow-hidden bg-white border-slate-200 shadow-xl z-[9999]" 
+        className={cn("p-0 w-64 sm:w-80 max-h-96 flex flex-col overflow-hidden bg-white border-slate-200 shadow-xl z-[9999]", contentClassName)} 
         align="start"
       >
         <div className="p-2 border-b border-slate-100 bg-slate-50/50">
