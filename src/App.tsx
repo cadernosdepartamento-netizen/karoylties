@@ -38,6 +38,7 @@ import {
   ArrowUpDown,
   ChevronUp,
   ChevronDown,
+  Info,
   CircleDollarSign,
   LayoutGrid,
   List,
@@ -238,6 +239,25 @@ interface Sale {
   categoryId: string;
   launchYear: number;
   costPrice?: number;
+  // FOB Specific Fields
+  dollarRate?: number;
+  invoice?: string;
+  fabricante?: string;
+  valor_unitario_usd?: number;
+  valor_total_usd?: number;
+  icms_usd?: number;
+  pis_usd?: number;
+  cofins_usd?: number;
+  ipi_usd?: number;
+  valor_liquido_usd?: number;
+  valor_unitario_brl?: number;
+  valor_total_brl?: number;
+  icms_brl?: number;
+  pis_brl?: number;
+  cofins_brl?: number;
+  ipi_brl?: number;
+  valor_liquido_brl?: number;
+  [key: string]: any; // Allow dynamic access for suffixes
 }
 
 interface UserProfile {
@@ -4530,6 +4550,59 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
     return new Date(NaN);
   };
 
+  const royaltySummary = React.useMemo(() => {
+    if (!startDate || !endDate || selectedProductSkus.length === 0 || !royaltyRateType || !contractId) return null;
+    
+    const startDt = new Date(startDate + 'T00:00:00');
+    const endDt = new Date(endDate + 'T23:59:59');
+    
+    const royaltyRateTypeMap: Record<string, Sale[]> = {
+      'netSales1': netSales,
+      'netPurchases': wholeSales,
+      'fob': fobSales
+    };
+    
+    const salesData = royaltyRateTypeMap[royaltyRateType] || sales;
+    const trimmedSelectedSkus = selectedProductSkus.map(sk => String(sk).trim());
+
+    const matchingSales = salesData.filter(s => {
+      const saleSku = String(s.sku || "").trim();
+      if (!trimmedSelectedSkus.includes(saleSku)) return false;
+      const dt = getSafeDate(s.date);
+      return !isNaN(dt.getTime()) && dt >= startDt && dt <= endDt;
+    });
+
+    let totalBase = 0;
+    const isFob = royaltyRateType === 'fob';
+
+    matchingSales.forEach(s => {
+      if (isFob) {
+        // Core Logic: Use BRL fields for FOB calculation
+        totalBase += (Number(s.valor_liquido_brl) || 0);
+      } else {
+        const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
+        const saleNetValue = s.netValue !== undefined ? Number(s.netValue) : (Number(s.totalValue || 0) - saleTaxes);
+        totalBase += saleNetValue;
+      }
+    });
+
+    const contract = contracts.find(c => c.id === contractId);
+    let royaltyRate = 0;
+    if (contract) {
+      if (royaltyRateType === 'netSales1') royaltyRate = contract.royaltyRateNetSales1 || 0;
+      if (royaltyRateType === 'netPurchases') royaltyRate = contract.royaltyRateNetPurchases || 0;
+      if (royaltyRateType === 'fob') royaltyRate = contract.royaltyRateFOB || 0;
+    }
+
+    return {
+      totalBase,
+      royaltyRate,
+      royaltyValue: totalBase * royaltyRate,
+      count: matchingSales.length,
+      isFob
+    };
+  }, [startDate, endDate, selectedProductSkus, royaltyRateType, netSales, wholeSales, fobSales, sales, contracts, contractId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!licenseId || !contractId || !royaltyRateType || !startDate || !endDate || selectedProductSkus.length === 0) {
@@ -4607,15 +4680,28 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
           groups.set(key, { quantity: 0, totalValue: 0, icms: 0, pis: 0, cofins: 0, ipi: 0, netValue: 0, lineId: saleLineId, prodId, month, year });
         }
         const g = groups.get(key);
-        g.quantity += (Number(s.quantity) || 0);
-        g.totalValue += (Number(s.totalValue) || 0);
-        g.icms += (Number(s.icms) || 0);
-        g.pis += (Number(s.pis) || 0);
-        g.cofins += (Number(s.cofins) || 0);
-        g.ipi += (Number(s.ipi) || 0);
-        const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
-        const saleNetValue = s.netValue !== undefined ? Number(s.netValue) : (Number(s.totalValue || 0) - saleTaxes);
-        g.netValue += saleNetValue;
+        const isFob = royaltyRateType === 'fob';
+
+        if (isFob) {
+          // Use BRL fields explicitly for FOB
+          g.quantity += (Number(s.quantity) || 0);
+          g.totalValue += (Number(s.valor_total_brl) || 0);
+          g.icms += (Number(s.icms_brl) || 0);
+          g.pis += (Number(s.pis_brl) || 0);
+          g.cofins += (Number(s.cofins_brl) || 0);
+          g.ipi += (Number(s.ipi_brl) || 0);
+          g.netValue += (Number(s.valor_liquido_brl) || 0);
+        } else {
+          g.quantity += (Number(s.quantity) || 0);
+          g.totalValue += (Number(s.totalValue) || 0);
+          g.icms += (Number(s.icms) || 0);
+          g.pis += (Number(s.pis) || 0);
+          g.cofins += (Number(s.cofins) || 0);
+          g.ipi += (Number(s.ipi) || 0);
+          const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
+          const saleNetValue = s.netValue !== undefined ? Number(s.netValue) : (Number(s.totalValue || 0) - saleTaxes);
+          g.netValue += saleNetValue;
+        }
       }
 
       const batchList = [];
@@ -4857,6 +4943,49 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
                 <Label>Data Final (Vendas)</Label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
               </div>
+            </div>
+          )}
+
+          {royaltySummary && (
+            <div className="p-4 rounded-lg bg-blue-50 border border-blue-100 space-y-3 animate-in fade-in zoom-in-95">
+              <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
+                <Info size={16} />
+                Resumo da Apuração
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p className="text-slate-500">Total de Registros</p>
+                  <p className="font-semibold text-slate-800">{royaltySummary.count}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Base de Cálculo ({royaltySummary.isFob ? 'BRL - FOB' : 'BRL'})</p>
+                  <p className="font-semibold text-slate-800">
+                    {royaltySummary.totalBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Alíquota Aplicada</p>
+                  <p className="font-semibold text-slate-800">{(royaltySummary.royaltyRate * 100).toFixed(2)}%</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Valor Total a Pagar</p>
+                  <p className="font-bold text-blue-700">
+                    {royaltySummary.royaltyValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+              </div>
+
+              {royaltySummary.isFob && (
+                <div className="pt-2 mt-2 border-t border-blue-200 flex gap-2 items-start">
+                  <div className="p-1 bg-blue-100 rounded text-blue-700 mt-0.5">
+                    <Info size={10} />
+                  </div>
+                  <p className="text-[10px] text-blue-700 leading-tight">
+                    <strong>Aviso FOB:</strong> As vendas originais em USD foram convertidas para BRL utilizando a taxa de câmbio gravada no momento da importação. Todos os cálculos de royalties estão sendo processados em Reais (BRL).
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -6229,10 +6358,23 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
       }
       
       const g = groups.get(key);
+      const isFob = activeTab === 'sales_fob';
+      const suffix = isFob ? (currencyView === 'usd' ? '_usd' : '_brl') : '';
+      
       const saleQuantity = Number(s.quantity) || 0;
-      const saleTotalValue = Number(s.totalValue) || 0;
-      const saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
-      const saleNetValue = Number(s.netValue) || 0;
+      let saleTotalValue = 0;
+      let saleTaxes = 0;
+      let saleNetValue = 0;
+
+      if (isFob) {
+        saleTotalValue = Number(s[`valor_total${suffix}`]) || 0;
+        saleTaxes = (Number(s[`icms${suffix}`]) || 0) + (Number(s[`pis${suffix}`]) || 0) + (Number(s[`cofins${suffix}`]) || 0) + (Number(s[`ipi${suffix}`]) || 0);
+        saleNetValue = Number(s[`valor_liquido${suffix}`]) || 0;
+      } else {
+        saleTotalValue = Number(s.totalValue) || 0;
+        saleTaxes = (Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0);
+        saleNetValue = Number(s.netValue) || 0;
+      }
 
       g.quantity += saleQuantity;
       g.totalValue += saleTotalValue;
@@ -6245,7 +6387,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
         if (a.month !== b.month) return Number(b.month) - Number(a.month);
         return a.sku.localeCompare(b.sku);
     });
-  }, [filteredSales]);
+  }, [filteredSales, activeTab, currencyView]);
 
   const [viewMode, setViewMode] = useState<'grouped' | 'individual'>('grouped');
 
@@ -6270,9 +6412,12 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
         if (!grid[y]) grid[y] = {};
         if (!grid[y][m]) grid[y][m] = 0;
         
+        const isFob = activeTab === 'sales_fob';
+        const suffix = isFob ? (currencyView === 'usd' ? '_usd' : '_brl') : '';
+        
         const val = salesSummaryValueType === 'quantity' ? (Number(s.quantity) || 0) :
-                   salesSummaryValueType === 'totalValue' ? (Number(s.totalValue) || 0) :
-                   salesSummaryValueType === 'netValue' ? (Number(s.netValue) || 0) :
+                   salesSummaryValueType === 'totalValue' ? (isFob ? (Number(s[`valor_total${suffix}`]) || 0) : (Number(s.totalValue) || 0)) :
+                   salesSummaryValueType === 'netValue' ? (isFob ? (Number(s[`valor_liquido${suffix}`]) || 0) : (Number(s.netValue) || 0)) :
                    (() => {
                      // Try to find a matching contract for this sale line
                      const contract = contracts.find((c: any) => 
@@ -6281,7 +6426,8 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                      );
                      // Use specific rate or a default if none matches (fallback to 10% estimation)
                      const rate = contract?.royaltyRateNetSales1 || 0.1;
-                     return (Number(s.netValue) || 0) * rate;
+                     const baseValue = isFob ? (Number(s[`valor_liquido${suffix}`]) || 0) : (Number(s.netValue) || 0);
+                     return baseValue * rate;
                    })();
         
         grid[y][m] += val;
@@ -6292,7 +6438,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
     const months = Array.from({ length: 12 }, (_, i) => i + 1);
 
     return { years, months, grid };
-  }, [sales, salesSummaryLicenseIds, salesSummaryLineIds, salesSummaryCategoryIds, salesSummaryValueType, contracts]);
+  }, [sales, salesSummaryLicenseIds, salesSummaryLineIds, salesSummaryCategoryIds, salesSummaryValueType, contracts, activeTab, currencyView]);
 
   return (
     <div className="space-y-6">
@@ -6305,7 +6451,12 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2 text-slate-800">
                 <TrendingUp size={18} className="text-emerald-600" />
-                <h2 className="text-base font-semibold">Resumo de Vendas Consolidadas</h2>
+                <h2 className="text-base font-semibold">
+                  {activeTab === 'sales_fob' ? "Resumo de valores de produtos importados" : 
+                   activeTab === 'sales_compras' ? "Resumo de valores de produtos comprados" : 
+                   activeTab === 'sales_liquidas' ? "Resumo de valores de produtos vendidos" :
+                   "Resumo de Vendas Consolidadas"}
+                </h2>
               </div>
               
               <div className="flex items-center gap-3 text-[10px] font-medium text-slate-500 bg-emerald-50/50 px-3 py-1 rounded-full border border-emerald-100">
@@ -6355,10 +6506,10 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 />
               </div>
 
-              <div className="min-w-[120px] space-y-1">
+              <div className="min-w-[120px] flex-1 space-y-1">
                 <Label className="text-[10px] text-slate-400 font-medium">Período</Label>
                 <Select value={salesSummaryViewMode} onValueChange={(v: any) => setSalesSummaryViewMode(v)}>
-                  <SelectTrigger className="h-7 text-[10px] w-full">
+                  <SelectTrigger className="h-7 text-[10px] w-full bg-white">
                     <span>{salesSummaryViewMode === 'monthly' ? 'Mensal' : 'Trimestral'}</span>
                   </SelectTrigger>
                   <SelectContent className="z-[9999]">
@@ -6368,10 +6519,10 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                 </Select>
               </div>
 
-              <div className="min-w-[150px] space-y-1">
+              <div className="min-w-[150px] flex-1 space-y-1">
                 <Label className="text-[10px] text-slate-400 font-medium">Tipo de Valor</Label>
                 <Select value={salesSummaryValueType} onValueChange={(v: any) => setSalesSummaryValueType(v)}>
-                  <SelectTrigger className="h-7 text-[10px] w-full">
+                  <SelectTrigger className="h-7 text-[10px] w-full bg-white">
                     <span>
                       {salesSummaryValueType === 'quantity' ? 'Quantidades' : 
                        salesSummaryValueType === 'totalValue' ? 'Valor Total (Bruto)' : 
@@ -6515,7 +6666,12 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-2">
                 <TrendingUp size={18} className="text-blue-600" />
-                <h2 className="text-base font-semibold text-slate-800">Listagem de Vendas por Produto</h2>
+                <h2 className="text-base font-semibold text-slate-800">
+                  {activeTab === 'sales_fob' ? "Listagem de produtos importados" : 
+                   activeTab === 'sales_compras' ? "Listagem de produtos comprados" : 
+                   activeTab === 'sales_liquidas' ? "Listagem de vendas por produto" :
+                   "Listagem de Vendas por Produto"}
+                </h2>
               </div>
 
               <div className="flex items-center gap-4">
@@ -6800,8 +6956,25 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                   ))
                 ) : (
                   filteredSales.slice(0, pageSize).map((sale, index) => {
-                    const totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
-                    const totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
+                    const isFob = activeTab === 'sales_fob';
+                    const suffix = isFob ? (currencyView === 'usd' ? '_usd' : '_brl') : '';
+                    
+                    let unitPriceValue = 0;
+                    let totalValueValue = 0;
+                    let totalImpostos = 0;
+                    let totalLiquido = 0;
+
+                    if (isFob) {
+                      unitPriceValue = Number(sale[`valor_unitario${suffix}`]) || 0;
+                      totalValueValue = Number(sale[`valor_total${suffix}`]) || 0;
+                      totalImpostos = (Number(sale[`icms${suffix}`]) || 0) + (Number(sale[`pis${suffix}`]) || 0) + (Number(sale[`cofins${suffix}`]) || 0) + (Number(sale[`ipi${suffix}`]) || 0);
+                      totalLiquido = Number(sale[`valor_liquido${suffix}`]) || 0;
+                    } else {
+                      unitPriceValue = sale.unitPrice || 0;
+                      totalValueValue = sale.totalValue || 0;
+                      totalImpostos = (sale.icms || 0) + (sale.pis || 0) + (sale.cofins || 0) + (sale.ipi || 0);
+                      totalLiquido = sale.netValue !== undefined ? sale.netValue : (sale.totalValue - totalImpostos);
+                    }
                     
                     return (
                     <tr key={`${sale.id}-${index}`} className="hover:bg-slate-50 transition-colors">
@@ -6840,10 +7013,10 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
-                        {sale.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
+                        {unitPriceValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
-                        {sale.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
+                        {totalValueValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
                         {totalImpostos.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
@@ -6958,6 +7131,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   const [selectedLaunchYears, setSelectedLaunchYears] = useState<string[]>([]);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [selectedCalculationTypes, setSelectedCalculationTypes] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState<number>(50);
 
   // Summary Table States
@@ -6971,15 +7145,17 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
   const [expandedSalesYears, setExpandedSalesYears] = useState<number[]>([]);
 
-  const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines, allCurrencies } = React.useMemo(() => {
+  const { availableLaunchYears, availableYears, availableMonths, availableContracts, availableLines, allCurrencies, availableCalculationTypes } = React.useMemo(() => {
     const yearsSet = new Set<number>();
     const monthsSet = new Set<number>();
     const launchYearsSet = new Set<number>();
     const currenciesSet = new Set<string>();
+    const calcTypesSet = new Set<string>();
 
     reports.forEach(r => {
       const contract = contracts.find(c => c.id === r.contractId);
       if (contract?.currency) currenciesSet.add(contract.currency);
+      if (r.calculationType) calcTypesSet.add(r.calculationType);
 
       if (selectedLicenseId && r.licenseId !== selectedLicenseId) return;
       if (selectedLineIds.length > 0 && (!r.lineId || !selectedLineIds.includes(r.lineId))) return;
@@ -6999,7 +7175,8 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       availableLaunchYears: Array.from(launchYearsSet).sort((a,b)=>b-a),
       availableContracts: contracts.filter(c => c.licenseId === selectedLicenseId),
       availableLines: lines.filter(l => l.licenseId === selectedLicenseId),
-      allCurrencies: Array.from(currenciesSet).sort()
+      allCurrencies: Array.from(currenciesSet).sort(),
+      availableCalculationTypes: Array.from(calcTypesSet).sort()
     };
   }, [reports, products, selectedLicenseId, selectedLineIds, contracts, lines]);
 
@@ -7045,6 +7222,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       if (selectedLineIds.length > 0 && !selectedLineIds.includes(r.lineId)) return false;
       if (selectedYears.length > 0 && !selectedYears.includes(String(r.year))) return false;
       if (selectedMonths.length > 0 && !selectedMonths.includes(String(r.month))) return false;
+      if (selectedCalculationTypes.length > 0 && !selectedCalculationTypes.includes(r.calculationType || '')) return false;
 
       if (selectedLaunchYears.length > 0) {
         const p = products.find(prod => prod.id === r.productId);
@@ -7053,13 +7231,13 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
 
       return true;
     });
-  }, [reports, products, selectedLicenseId, selectedContractId, selectedLineIds, selectedYears, selectedMonths, selectedLaunchYears]);
+  }, [reports, products, selectedLicenseId, selectedContractId, selectedLineIds, selectedYears, selectedMonths, selectedLaunchYears, selectedCalculationTypes]);
 
   const tableData = React.useMemo(() => {
     const groups = new Map<string, any>();
 
     filteredReports.forEach(r => {
-      const key = `${r.year}-${r.month}-${r.licenseId}-${r.lineId}-${r.contractId}-${r.royaltyRate || 0}`;
+      const key = `${r.year}-${r.month}-${r.licenseId}-${r.lineId}-${r.contractId}-${r.royaltyRate || 0}-${r.calculationType || ''}`;
       if (!groups.has(key)) {
         groups.set(key, {
           id: key,
@@ -7069,6 +7247,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
           licenseId: r.licenseId,
           contractId: r.contractId,
           lineId: r.lineId,
+          calculationType: r.calculationType || '',
           royaltyRate: r.royaltyRate || 0,
           quantity: 0,
           totalValue: 0,
@@ -7476,6 +7655,17 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
               />
             </div>
 
+            <div className="space-y-1 min-w-[140px] flex-1">
+              <Label className="text-xs">Tipo de Cálculo</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={availableCalculationTypes.map(t => ({ label: t, value: t }))}
+                selectedValues={selectedCalculationTypes}
+                onChange={setSelectedCalculationTypes}
+                placeholder="Todos os Tipos"
+              />
+            </div>
+
             <div className="space-y-1 min-w-[100px] max-w-[130px]">
               <Label className="text-xs">Ano (Venda)</Label>
               <MultiSelectDropdown
@@ -7541,8 +7731,9 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                   <th className="px-4 py-3 text-right whitespace-nowrap">COFINS</th>
                   <th className="px-4 py-3 text-right whitespace-nowrap">IPI</th>
                   <th className="px-4 py-3 text-right whitespace-nowrap">Valor Líquido</th>
-                  <th className="px-4 py-3 text-right whitespace-nowrap">Taxa Royalties</th>
+                  <th className="px-1 py-3 text-right whitespace-normal leading-tight w-[60px]">Taxa Royalties</th>
                   <th className="px-4 py-3 text-right whitespace-nowrap">Valor Royalties</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Tipo</th>
                   <th className="px-4 py-3 text-center whitespace-nowrap">Detalhes</th>
                 </tr>
               </thead>
@@ -7554,12 +7745,12 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
 
                   const downloadCSV = () => {
                     const groupReports = reports.filter(r => row.reportIds.includes(r.id));
-                    const headers = ["Ano", "Mês", "Licenciador", "Linha", "SKU", "Produto", "Qtd", "Valor Total", "ICMS", "PIS", "COFINS", "IPI", "Valor Líquido", "Taxa", "Valor Royalties"];
+                    const headers = ["Ano", "Mês", "Licenciador", "Linha", "SKU", "Produto", "Qtd", "Valor Total", "ICMS", "PIS", "COFINS", "IPI", "Valor Líquido", "Taxa", "Valor Royalties", "Cálculo"];
                     const csvRows = groupReports.map(r => {
                       const prod = products.find(p => p.id === r.productId);
                       return [
                         r.year, r.month, l?.nomelicenciador || '', ln?.nomelinha || '', prod?.sku || '', prod?.name || r.productId || '',
-                        r.quantity, r.totalValue, r.icms, r.pis, r.cofins, r.ipi, r.netValue, r.royaltyRate, r.royaltyValue
+                        r.quantity, r.totalValue, r.icms, r.pis, r.cofins, r.ipi, r.netValue, r.royaltyRate, r.royaltyValue, r.calculationType || ''
                       ].map(v => String(v).replace('.', ',')).join(';');
                     });
                     const csvString = [headers.join(';'), ...csvRows].join('\n');
@@ -7592,10 +7783,11 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.cofins.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.ipi.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap font-medium">{row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.royaltyRate > 0 ? `${(row.royaltyRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '-'}</td>
+                      <td className="px-1 py-3 text-right text-slate-600 whitespace-nowrap">{row.royaltyRate > 0 ? `${(row.royaltyRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '-'}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
                         {row.royaltyValue > 0 ? row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                       </td>
+                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap font-medium uppercase italic bg-slate-50/30">{row.calculationType || '-'}</td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <button onClick={downloadCSV} className="text-blue-600 hover:text-blue-800">
                           <FileDown size={16} />
@@ -7606,7 +7798,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                 })}
                 {tableData.length === 0 && (
                   <tr>
-                    <td colSpan={15} className="px-4 py-12 text-center text-slate-400">Nenhum relatório encontrado no banco de dados com os filtros atuais.</td>
+                    <td colSpan={17} className="px-4 py-12 text-center text-slate-400">Nenhum relatório encontrado no banco de dados com os filtros atuais.</td>
                   </tr>
                 )}
               </tbody>
@@ -7621,10 +7813,11 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                     <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.cofins, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.ipi, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">{tableData.reduce((acc, r)=>acc+r.netValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap text-sm">-</td>
+                    <td className="px-1 py-4 text-right whitespace-nowrap text-sm">-</td>
                     <td className="px-4 py-4 text-right whitespace-nowrap text-sm text-slate-600">
                       {tableData.reduce((acc, r)=>acc+r.royaltyValue, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
+                    <td></td>
                     <td></td>
                   </tr>
                 </tfoot>

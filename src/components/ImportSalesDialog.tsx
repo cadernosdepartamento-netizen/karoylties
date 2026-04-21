@@ -210,13 +210,6 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           sku,
           description,
           quantity: parseNum(getVal(["quantidade", "qtd", "quantidade vendida", "qtde", "quant", "qtd vendida", "qtd. vendida"])),
-          unitPrice: parseNum(getVal(["valor unitário", "valor unitario", "preço unitário", "vlr unit", "unit price", "preco unitario", "vlr unitario"])),
-          totalValue: parseNum(getVal(["valor total", "vlr total", "total value", "total", "valor bruto", "vlr bruto"])),
-          icms: parseNum(getVal(["icms", "imposto icms"])),
-          pis: parseNum(getVal(["pis"])),
-          cofins: parseNum(getVal(["cofins", "confis"])),
-          ipi: parseNum(getVal(["ipi"])),
-          netValue: parseNum(getVal(["valor liquido", "valor líquido", "vlr liquido", "vlr líquido", "net value"])),
           ean: String(getVal(["ean"]) || product.ean || '').trim(),
           date: currentData || new Date().toISOString().split('T')[0],
           
@@ -231,19 +224,55 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
         };
 
         if (collectionName === 'fobsales') {
-          saleData.invoice = String(getVal(["invoice", "nf", "nota fiscal"]) || '').trim();
+          // Input column aliases based on user request
+          const unitPriceUSD = parseNum(getVal(["valor_unitario", "valor unitário", "valor unitario"]));
+          const totalValueUSD = parseNum(getVal(["valor_total", "valor total", "vlr total"]));
+          const icmsUSD = parseNum(getVal(["icms"]));
+          const pisUSD = parseNum(getVal(["pis"]));
+          const cofinsUSD = parseNum(getVal(["cofins"]));
+          const ipiUSD = parseNum(getVal(["ipi"]));
+          const netValueUSD = parseNum(getVal(["valor_liquido", "valor liquido", "valor líquido"]));
+          const dollarRate = parseNum(getVal(["taxa_dolar", "taxa dolar", "taxa de dolar"])) || 1;
+
+          saleData.invoice = String(getVal(["invoice", "data_invoice", "nf", "nota fiscal"]) || '').trim();
           saleData.fabricante = String(getVal(["fabricante", "manufacturer"]) || '').trim();
-          const dollarRate = parseNum(getVal(["taxa dolar", "taxa de dolar", "dollar rate"])) || 1;
           saleData.dollarRate = dollarRate;
           
-          // Recalculate values in BRL
-          saleData.unitPriceBRL = saleData.unitPrice * dollarRate;
-          saleData.totalValueBRL = saleData.totalValue * dollarRate;
-          saleData.icmsBRL = saleData.icms * dollarRate;
-          saleData.pisBRL = saleData.pis * dollarRate;
-          saleData.cofinsBRL = saleData.cofins * dollarRate;
-          saleData.ipiBRL = saleData.ipi * dollarRate;
-          saleData.netValueBRL = saleData.netValue * dollarRate;
+          // USD Fields
+          saleData.valor_unitario_usd = unitPriceUSD;
+          saleData.valor_total_usd = totalValueUSD;
+          saleData.icms_usd = icmsUSD;
+          saleData.pis_usd = pisUSD;
+          saleData.cofins_usd = cofinsUSD;
+          saleData.ipi_usd = ipiUSD;
+          saleData.valor_liquido_usd = netValueUSD;
+
+          // BRL Fields (Converted)
+          saleData.valor_unitario_brl = unitPriceUSD * dollarRate;
+          saleData.valor_total_brl = totalValueUSD * dollarRate;
+          saleData.icms_brl = icmsUSD * dollarRate;
+          saleData.pis_brl = pisUSD * dollarRate;
+          saleData.cofins_brl = cofinsUSD * dollarRate;
+          saleData.ipi_brl = ipiUSD * dollarRate;
+          saleData.valor_liquido_brl = netValueUSD * dollarRate;
+
+          // Keep standard fields for generic logic fallback if needed
+          saleData.unitPrice = unitPriceUSD;
+          saleData.totalValue = totalValueUSD;
+          saleData.icms = icmsUSD;
+          saleData.pis = pisUSD;
+          saleData.cofins = cofinsUSD;
+          saleData.ipi = ipiUSD;
+          saleData.netValue = netValueUSD;
+        } else {
+          // Standard sales import (kept as is for compatibility)
+          saleData.unitPrice = parseNum(getVal(["valor unitário", "valor unitario", "preço unitário", "vlr unit", "unit price", "preco unitario", "vlr unitario"]));
+          saleData.totalValue = parseNum(getVal(["valor total", "vlr total", "total value", "total", "valor bruto", "vlr bruto"]));
+          saleData.icms = parseNum(getVal(["icms", "imposto icms"]));
+          saleData.pis = parseNum(getVal(["pis"]));
+          saleData.cofins = parseNum(getVal(["cofins", "confis"]));
+          saleData.ipi = parseNum(getVal(["ipi"]));
+          saleData.netValue = parseNum(getVal(["valor liquido", "valor líquido", "vlr liquido", "vlr líquido", "net value"]));
         }
 
         batchList.push(saleData);
@@ -296,28 +325,28 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
 
   const handleDownloadTemplate = () => {
     try {
-      const headers = [
-        "código sku",
-        "produto",
-        "quantidade",
-        "valor unitário",
-        "valor total",
-        "ICMS",
-        "PIS",
-        "CONFIS",
-        "IPI",
-        "Valor liquido",
-        "EAN",
-        "Data",
-        "Invoice",
-        "Fabricante",
-        "Taxa Dolar"
-      ];
-      
-      const sampleData = [
-        ["SKU-EXEMPLO", "Produto Exemplo", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01", "INV123", "FAB001", 5.50]
-      ];
+      let headers = [];
+      let sampleData = [];
 
+      if (collectionName === 'fobsales') {
+        headers = [
+          "sku", "produto", "quantidade", "valor_unitario", "valor_total", 
+          "icms", "pis", "cofins", "ipi", "valor_liquido", 
+          "ean", "data_invoice", "fabricante", "taxa_dolar"
+        ];
+        sampleData = [
+          ["SKU-FOB", "Produto Importado", 10, 10.50, 105.00, 0, 0, 0, 0, 105.00, "1234567890123", "2026-01-01", "Importadora ABC", 5.45]
+        ];
+      } else {
+        headers = [
+          "código sku", "produto", "quantidade", "valor unitário", "valor total",
+          "ICMS", "PIS", "CONFIS", "IPI", "Valor liquido", "EAN", "Data"
+        ];
+        sampleData = [
+          ["SKU-NORMAL", "Produto Nacional", 10, 50.00, 500.00, 0, 0, 0, 0, 500.00, "1234567890123", "2026-01-01"]
+        ];
+      }
+      
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Template Vendas");
@@ -335,13 +364,27 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
       <DialogTrigger className={buttonVariants({ variant: "outline", className: "gap-2" })}>
           <Upload size={16} /> {buttonText}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Importar Dados de Vendas</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <p className="text-sm text-slate-500">
-            A planilha precisa conter as colunas: <strong>código sku, produto, quantidade, valor unitário, valor total, ICMS, PIS, CONFIS, IPI, Valor liquido, EAN, Data</strong>.
+            {collectionName === 'fobsales' ? (
+              <>
+                Para <strong>FOB (Importados)</strong>, a planilha deve conter as seguintes colunas (valores em USD):<br/>
+                <code className="text-xs bg-slate-100 p-1 rounded mt-2 block">
+                  sku, produto, quantidade, valor_unitario, valor_total, icms, pis, cofins, ipi, valor_liquido, ean, data_invoice, fabricante, taxa_dolar
+                </code>
+              </>
+            ) : (
+              <>
+                A planilha precisa conter as colunas:<br/>
+                <code className="text-xs bg-slate-100 p-1 rounded mt-2 block">
+                  código sku, produto, quantidade, valor unitário, valor total, ICMS, PIS, CONFIS, IPI, Valor liquido, EAN, Data
+                </code>
+              </>
+            )}
           </p>
           <p className="text-sm text-slate-500">
             Os dados de Licenciador, Linha, Categoria, Ano lançamento e Preço de custo serão inseridos automaticamente com base no <strong>Código SKU</strong>.
