@@ -5724,6 +5724,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
   const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   const [filterLaunchYears, setFilterLaunchYears] = useState<string[]>([]);
+  const [filterProductIds, setFilterProductIds] = useState<string[]>([]);
   const [summaryValueType, setSummaryValueType] = useState('margem_real'); // Margem Real by default
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
@@ -5778,7 +5779,8 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       const matchLine = filterLineIds.length === 0 || filterLineIds.includes(r.lineId);
       const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(product?.categoryId);
       const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(product?.launchYear?.toString());
-      return matchLicense && matchLine && matchCategory && matchLaunchYear;
+      const matchProduct = filterProductIds.length === 0 || filterProductIds.includes(r.productId);
+      return matchLicense && matchLine && matchCategory && matchLaunchYear && matchProduct;
     }).map((r: any) => {
       const product = products.find((p: any) => p.id === r.productId);
       const category = categories?.find((c: any) => c.id === product?.categoryId);
@@ -5831,7 +5833,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         margem_real: realValue
       };
     });
-  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, salesByProductMonthYear]);
+  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterProductIds, salesByProductMonthYear]);
 
   const summaryGrid = React.useMemo(() => {
     const years = Array.from(new Set(processedReports.map((r: any) => r.year))).sort((a: any, b: any) => (b as any) - (a as any));
@@ -6086,6 +6088,19 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 options={sortOptions(licenses.map((l: any) => ({ label: l.nomelicenciador, value: l.id })))}
                 selectedValues={filterLicenseIds}
                 onChange={setFilterLicenseIds}
+                placeholder="Todos"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Produto (SKU)</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(products.map((p: any) => ({ 
+                  label: `${p.sku ? String(p.sku).padStart(6, '0') : '000000'} - ${p.name}`, 
+                  value: p.id 
+                })))}
+                selectedValues={filterProductIds}
+                onChange={setFilterProductIds}
                 placeholder="Todos"
               />
             </div>

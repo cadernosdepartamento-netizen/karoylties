@@ -9,6 +9,7 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+console.log('Firebase Storage inicializado no bucket:', (firebaseConfig as any).storageBucket);
 export const googleProvider = new GoogleAuthProvider();
 
 export const uploadFile = async (file: File, path: string): Promise<string> => {
