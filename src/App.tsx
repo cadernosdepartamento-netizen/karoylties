@@ -1053,6 +1053,7 @@ function MainApp() {
                 products={products}
                 categories={productCategories}
                 isAdmin={isAdmin}
+                sales={sales}
               />
             )}
             {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} payments={payments} isAdmin={isAdmin} />}
@@ -5718,7 +5719,7 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   );
 }
 
-function DashboardView({ contracts, reports, payments, licenses, lines, products, categories, isAdmin }: any) {
+function DashboardView({ contracts, reports, payments, licenses, lines, products, categories, isAdmin, sales }: any) {
   const [filterLicenseIds, setFilterLicenseIds] = useState<string[]>([]);
   const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
@@ -5742,6 +5743,34 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     { label: 'Margem Real', value: 'realValue' }
   ];
 
+  const salesByProductMonthYear = React.useMemo(() => {
+    const map: Record<string, { totalValue: number, netValue: number, taxes: number }> = {};
+    sales.forEach(sale => {
+      const dateStr = sale.date;
+      if (!dateStr) return;
+      const date = getSafeDate(dateStr);
+      if (isNaN(date.getTime())) return;
+      
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const sku = (sale.sku || '').trim();
+      const key = `${sku}_${month}_${year}`;
+      
+      if (!map[key]) {
+        map[key] = { totalValue: 0, netValue: 0, taxes: 0 };
+      }
+      
+      const total = Number(sale.totalValue) || Number(sale.totalValue_brl) || 0;
+      const net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
+      const tax = total - net;
+      
+      map[key].totalValue += total;
+      map[key].netValue += net;
+      map[key].taxes += tax;
+    });
+    return map;
+  }, [sales]);
+
   const processedReports = React.useMemo(() => {
     return reports.filter((r: any) => {
       const product = products.find((p: any) => p.id === r.productId);
@@ -5757,11 +5786,18 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       const line = lines.find((l: any) => l.id === r.lineId);
       const contract = contracts.find((c: any) => c.id === r.contractId);
 
+      const sku = (product?.sku || '').trim();
+      const sKey = `${sku}_${r.month}_${r.year}`;
+      const salesData = salesByProductMonthYear[sKey] || { totalValue: 0, netValue: 0, taxes: 0 };
+
+      const faturamentoBruto = salesData.totalValue;
+      const valorLiquido = salesData.netValue;
+      const impostos = salesData.taxes;
+
       const unitCost = product?.custo_unitario || 0;
       const totalProductCost = r.quantity * unitCost;
-      const taxes = (r.totalValue || 0) - r.netValue;
-      const realValue = r.netValue - totalProductCost - (r.royaltyValue || 0) - (r.cmfValue || 0);
-      const marginPercentage = r.netValue > 0 ? (realValue / r.netValue) * 100 : 0;
+      const realValue = valorLiquido - totalProductCost - (r.royaltyValue || 0) - (r.cmfValue || 0);
+      const marginPercentage = valorLiquido > 0 ? (realValue / valorLiquido) * 100 : 0;
 
       return {
         ...r,
@@ -5776,12 +5812,14 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         launchYear: product?.launchYear || '-',
         unitCost,
         totalProductCost,
-        taxes,
+        totalValue: faturamentoBruto,
+        netValue: valorLiquido,
+        taxes: impostos,
         realValue,
         marginPercentage
       };
     });
-  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears]);
+  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, salesByProductMonthYear]);
 
   const summaryGrid = React.useMemo(() => {
     const years = Array.from(new Set(processedReports.map((r: any) => r.year))).sort((a: any, b: any) => (b as any) - (a as any));
@@ -5954,7 +5992,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         <CardHeader className="bg-white border-b border-slate-100 py-6 px-8">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <CardTitle className="text-xl font-bold text-slate-800">Produtos</CardTitle>
+              <CardTitle className="text-xl font-bold text-slate-800">Cadeia de valores por produto</CardTitle>
               <CardDescription className="text-xs text-slate-400 mt-1">Gerencie os produtos vinculados às linhas</CardDescription>
             </div>
             <div className="flex items-center gap-3">
