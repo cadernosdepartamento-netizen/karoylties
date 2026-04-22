@@ -57,9 +57,7 @@ export function MultiSelectDropdown({ options, selectedValues, onChange, placeho
             <span className="truncate">
               {selectedValues.length === 0 
                 ? <span className="text-muted-foreground">{placeholder}</span>
-                : selectedValues.length === 1 
-                  ? selectedLabels[0]
-                  : `${selectedValues.length} selecionados`
+                : selectedLabels.join(", ")
               }
             </span>
             <ChevronDown size={14} className="ml-2 shrink-0 opacity-50" />
@@ -110,7 +108,7 @@ export function MultiSelectDropdown({ options, selectedValues, onChange, placeho
                     <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
                       {isSelected && <Check size={14} className="text-blue-600" />}
                     </span>
-                    <span className="break-words whitespace-normal text-left truncate">{option.label}</span>
+                    <span className="break-words whitespace-normal text-left">{option.label}</span>
                   </div>
                 );
               })}

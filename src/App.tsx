@@ -5724,7 +5724,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
   const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   const [filterLaunchYears, setFilterLaunchYears] = useState<string[]>([]);
-  const [summaryValueType, setSummaryValueType] = useState('realValue'); // Margem Real by default
+  const [summaryValueType, setSummaryValueType] = useState('margem_real'); // Margem Real by default
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
@@ -5733,14 +5733,14 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
   [reports]);
 
   const valueTypes = [
-    { label: 'Quantidades', value: 'quantity' },
-    { label: 'Faturamento Bruto', value: 'totalValue' },
-    { label: 'Impostos', value: 'taxes' },
-    { label: 'Valor Líquido', value: 'netValue' },
-    { label: 'Custo Produto', value: 'totalProductCost' },
-    { label: 'Valor Royalties', value: 'royaltyValue' },
-    { label: 'Valor CMF', value: 'cmfValue' },
-    { label: 'Margem Real', value: 'realValue' }
+    { label: 'Quantidades', value: 'quantidade' },
+    { label: 'Faturamento Bruto', value: 'faturamento_bruto' },
+    { label: 'Impostos', value: 'impostos' },
+    { label: 'Valor Líquido', value: 'valor_liquido' },
+    { label: 'Custo Produto', value: 'custo_produto' },
+    { label: 'Valor Royalties', value: 'valor_royalties' },
+    { label: 'Valor CMF', value: 'valor_cmf' },
+    { label: 'Margem Real', value: 'margem_real' }
   ];
 
   const salesByProductMonthYear = React.useMemo(() => {
@@ -5787,6 +5787,9 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       const contract = contracts.find((c: any) => c.id === r.contractId);
 
       const sku = (product?.sku || '').trim();
+      const skuFormatted = product?.sku ? String(product.sku).padStart(6, '0') : '-';
+      const imageUrl = sku ? `https://img.kalunga.com.br/FotosdeProdutos/${sku.padStart(6, '0')}.jpg` : null;
+
       const sKey = `${sku}_${r.month}_${r.year}`;
       const salesData = salesByProductMonthYear[sKey] || { totalValue: 0, netValue: 0, taxes: 0 };
 
@@ -5802,9 +5805,9 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       return {
         ...r,
         productName: product?.name || r.productName || '-',
-        sku: product?.sku || '-',
+        sku: skuFormatted,
         ean: product?.ean || '-',
-        imageUrl: product?.imageUrl,
+        imageUrl,
         categoryName: category?.nomeCategoriaProduto || '-',
         lineName: line?.nomelinha || '-',
         licenseName: license?.nomelicenciador || '-',
@@ -5816,7 +5819,16 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         netValue: valorLiquido,
         taxes: impostos,
         realValue,
-        marginPercentage
+        marginPercentage,
+        // Portuguese keys for the Tipo de Valor selection
+        quantidade: r.quantity,
+        faturamento_bruto: faturamentoBruto,
+        impostos: impostos,
+        valor_liquido: valorLiquido,
+        custo_produto: totalProductCost,
+        valor_royalties: r.royaltyValue || 0,
+        valor_cmf: r.cmfValue || 0,
+        margem_real: realValue
       };
     });
   }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, salesByProductMonthYear]);
@@ -5843,7 +5855,40 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     return { years, months, grid };
   }, [processedReports, summaryValueType]);
 
-  const { items: sortedListing, requestSort, sortConfig } = useSortableData(processedReports, { key: 'realValue', direction: 'desc' });
+  const groupedByProduct = React.useMemo(() => {
+    const map: Record<string, any> = {};
+    processedReports.forEach(r => {
+      const sku = r.sku;
+      if (!map[sku]) {
+        map[sku] = {
+          ...r,
+          quantity: 0,
+          totalValue: 0,
+          netValue: 0,
+          taxes: 0,
+          totalProductCost: 0,
+          royaltyValue: 0,
+          cmfValue: 0,
+          realValue: 0,
+        };
+      }
+      map[sku].quantity += (r.quantity || 0);
+      map[sku].totalValue += (r.totalValue || 0);
+      map[sku].netValue += (r.netValue || 0);
+      map[sku].taxes += (r.taxes || 0);
+      map[sku].totalProductCost += (r.totalProductCost || 0);
+      map[sku].royaltyValue += (r.royaltyValue || 0);
+      map[sku].cmfValue += (r.cmfValue || 0);
+      map[sku].realValue += (r.realValue || 0);
+    });
+    
+    return Object.values(map).map(r => ({
+      ...r,
+      marginPercentage: r.netValue > 0 ? (r.realValue / r.netValue) * 100 : 0
+    }));
+  }, [processedReports]);
+
+  const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
   const paginatedListing = sortedListing.slice(0, itemsPerPage);
 
   const monthsBR = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -5908,7 +5953,9 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
               <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Tipo de Valor</Label>
               <Select value={summaryValueType} onValueChange={setSummaryValueType}>
                 <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200">
-                  <SelectValue />
+                  <SelectValue>
+                    {valueTypes.find(v => v.value === summaryValueType)?.label}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {valueTypes.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
@@ -5948,12 +5995,12 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                           yearTotal += val;
                           return (
                             <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-slate-400">
-                              {val === 0 ? '0' : summaryValueType === 'quantity' ? val.toLocaleString('pt-BR') : val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              {val === 0 ? '0' : summaryValueType === 'quantidade' ? val.toLocaleString('pt-BR') : val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </td>
                           );
                         })}
                         <td className="px-6 py-4 text-right font-bold text-emerald-600 bg-emerald-50/10">
-                          {summaryValueType === 'quantity' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          {summaryValueType === 'quantidade' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
                       </tr>
                       {/* Expansion Row - Variation % can go here if needed, but image doesn't show it */}
@@ -5969,7 +6016,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                     summaryGrid.years.forEach(y => colTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0);
                     return (
                       <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-emerald-600">
-                        {summaryValueType === 'quantity' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        {summaryValueType === 'quantidade' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     );
                   })}
@@ -5977,7 +6024,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                     {(() => {
                       let grandTotal = 0;
                       summaryGrid.years.forEach(y => summaryGrid.months.forEach(m => grandTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0));
-                      return summaryValueType === 'quantity' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                      return summaryValueType === 'quantidade' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                     })()}
                   </td>
                 </tr>
@@ -6060,22 +6107,18 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
               <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded" /></th>
-                  <th className="px-6 py-4 font-semibold">Imagem</th>
-                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 text-blue-600" />
-                  <SortableHeader label="Nome" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
-                  <SortableHeader label="Categoria" sortKey="categoryName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
-                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
-                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
-                  <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
-                  <th className="px-6 py-4 text-right">Faturamento Bruto</th>
-                  <th className="px-6 py-4 text-right text-rose-600">Impostos</th>
-                  <th className="px-6 py-4 text-right">Valor Líquido</th>
-                  <th className="px-6 py-4 text-right text-rose-600">Custo Prod.</th>
-                  <th className="px-6 py-4 text-right text-rose-600">Royalties</th>
-                  <th className="px-6 py-4 text-right text-rose-600">CMF</th>
-                  <SortableHeader label="Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right text-blue-600 bg-emerald-50/20" />
-                  <th className="px-6 py-4 text-right text-blue-700 bg-blue-50/30">% Margem</th>
-                  <th className="px-6 py-4 text-center">Ações</th>
+                  <th className="px-6 py-4 font-normal">Imagem</th>
+                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
+                  <SortableHeader label="Nome" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Faturamento Bruto</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Impostos</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Valor Líquido</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Custo Prod.</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Royalties</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">CMF</th>
+                  <SortableHeader label="Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right font-normal whitespace-nowrap" />
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">% Margem</th>
+                  <th className="px-6 py-4 text-center font-normal">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -6085,28 +6128,33 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                     <td className="px-6 py-4">
                       <div className="w-10 h-10 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1">
                         {row.imageUrl ? (
-                          <img src={row.imageUrl} alt="" className="max-w-full max-h-full object-contain mix-blend-multiply" />
+                          <img 
+                            src={row.imageUrl} 
+                            alt="" 
+                            className="max-w-full max-h-full object-contain mix-blend-multiply" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => { 
+                              e.currentTarget.src = 'https://placehold.co/100x100?text=S/I';
+                              e.currentTarget.onerror = null;
+                            }}
+                          />
                         ) : (
                           <Package size={16} className="text-slate-300" />
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-bold text-slate-800">{row.sku}</td>
-                    <td className="px-6 py-4">
-                      <div className="max-w-[200px] truncate font-medium text-slate-700" title={row.productName}>{row.productName}</div>
+                    <td className="px-6 py-4 text-slate-700">{row.sku}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-slate-700">
+                      {row.productName}
                     </td>
-                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.categoryName}</td>
-                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.lineName}</td>
-                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.licenseName}</td>
-                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap text-center">{row.launchYear}</td>
-                    <td className="px-6 py-4 text-right text-slate-700">R$ {row.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.taxes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-900">R$ {row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.totalProductCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.cmfValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right font-bold text-emerald-600 bg-emerald-50/10">R$ {row.realValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right font-bold text-blue-700 bg-blue-50/20">{row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.taxes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.totalProductCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.cmfValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.realValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">{row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
@@ -8203,7 +8251,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                   <SortableHeader label="COFINS" sortKey="cofins" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="IPI" sortKey="ipi" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="Valor Líquido" sortKey="netValue" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Taxa Royalties" sortKey="royaltyRate" currentSort={sortConfig} onSort={requestSort} />
+                  <SortableHeader label="Taxa Royalties" sortKey="royaltyRate" currentSort={sortConfig} onSort={requestSort} className="w-20 whitespace-normal leading-tight px-2" />
                   <SortableHeader label="Valor Royalties" sortKey="royaltyValue" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="Tipo" sortKey="calculationType" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="CMF" sortKey="cmfValue" currentSort={sortConfig} onSort={requestSort} />
@@ -8256,7 +8304,7 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.cofins.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{row.ipi.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap font-medium">{row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="px-1 py-3 text-right text-slate-600 whitespace-nowrap">{row.royaltyRate > 0 ? `${(row.royaltyRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '-'}</td>
+                      <td className="px-2 py-3 text-right text-slate-600 whitespace-nowrap w-20">{row.royaltyRate > 0 ? `${(row.royaltyRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : '-'}</td>
                       <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">
                         {row.royaltyValue > 0 ? row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                       </td>
