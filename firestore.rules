@@ -131,6 +131,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
+    
+    match /cronograma_obrigacoes/{obligationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();

@@ -823,7 +823,7 @@ function MainApp() {
           <nav className="flex-1 px-4 space-y-1">
             <SidebarItem 
               icon={<LayoutDashboard size={20} />} 
-              label="Dashboard" 
+              label="Cadeia de valores" 
               active={activeTab === 'dashboard'} 
               onClick={() => setActiveTab('dashboard')} 
             />
@@ -927,7 +927,7 @@ function MainApp() {
         <main className="flex-1 overflow-y-auto">
           <header className="bg-white border-b border-slate-200 px-8 py-4 sticky top-0 z-10 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-slate-900 capitalize">
-              {activeTab === 'dashboard' && 'Dashboard'}
+              {activeTab === 'dashboard' && 'Cadeia de valores'}
               {activeTab === 'contracts' && 'Contratos'}
               {activeTab === 'licenses' && 'Licenciadores'}
               {activeTab === 'lines' && 'Linhas'}
@@ -1051,6 +1051,8 @@ function MainApp() {
                 licenses={licenses}
                 lines={lines}
                 products={products}
+                categories={productCategories}
+                isAdmin={isAdmin}
               />
             )}
             {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} payments={payments} isAdmin={isAdmin} />}
@@ -2686,7 +2688,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                   <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex justify-between items-center">
                     <span className="font-bold text-blue-900">Mínimo Garantido Total (Soma das Parcelas):</span>
                     <span className="text-xl font-black text-blue-600">
-                      {currency} {totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      {currency} {totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div className="space-y-2">
@@ -3120,7 +3122,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                   <div className="space-y-1">
                     <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Mínimo Garantido Total</p>
                     <p className="text-2xl font-black text-blue-700">
-                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   {contract.isDividedIntoYears && (
@@ -3134,7 +3136,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                       <div key={y.yearNumber} className="p-3 border rounded-lg bg-slate-50">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ano {y.yearNumber}</p>
                         <p className="text-sm font-bold text-slate-900">
-                          {getCurrencySymbol(contract.currency || 'BRL')} {y.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          {getCurrencySymbol(contract.currency || 'BRL')} {y.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-1">
                           {formatDateBR(y.startDate)} - {formatDateBR(y.endDate)}
@@ -3213,7 +3215,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                         contract.mgInstallments.map((inst: any) => (
                           <div key={inst.installmentNumber} className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-100 text-xs">
                             <span className="font-medium text-slate-600">Parcela {inst.installmentNumber} {inst.year ? `(${inst.year})` : ''}</span>
-                            <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             <span className="text-slate-500">{formatDateBR(inst.dueDate)}</span>
                           </div>
                         ))
@@ -3248,7 +3250,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
                             {contract.marketingFundInstallments.map((inst: any) => (
                               <div key={inst.installmentNumber} className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-100 text-xs">
                                 <span className="font-medium text-slate-600">Parcela {inst.installmentNumber} {inst.year ? `(${inst.year})` : ''}</span>
-                                <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 <span className="text-slate-500">{formatDateBR(inst.dueDate)}</span>
                               </div>
                             ))}
@@ -4493,7 +4495,7 @@ function AddContractDialog({ licenses, lines, products, contracts }: { licenses:
                 <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex justify-between items-center">
                   <span className="font-bold text-blue-900">Mínimo Garantido Total (Soma das Parcelas):</span>
                   <span className="text-xl font-black text-blue-600">
-                    {currency} {totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    {currency} {totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -5716,282 +5718,375 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   );
 }
 
-function DashboardView({ contracts, reports, payments, licenses, lines, products }: any) {
-  const totalRoyalties = React.useMemo(() => reports.reduce((acc: number, r: any) => acc + r.royaltyValue, 0), [reports]);
-  const totalMG = React.useMemo(() => contracts.reduce((acc: number, c: any) => acc + c.minimumGuarantee, 0), [contracts]);
-  const totalPaid = React.useMemo(() => payments.filter((p: any) => p.status === 'paid').reduce((acc: number, p: any) => acc + p.amount, 0), [payments]);
+function DashboardView({ contracts, reports, payments, licenses, lines, products, categories, isAdmin }: any) {
+  const [filterLicenseIds, setFilterLicenseIds] = useState<string[]>([]);
+  const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
+  const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
+  const [filterLaunchYears, setFilterLaunchYears] = useState<string[]>([]);
+  const [summaryValueType, setSummaryValueType] = useState('realValue'); // Margem Real by default
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
-  const activeContractsCount = React.useMemo(() => 
-    contracts.filter((c: any) => ['Ativo', 'Ativo (sell-off)'].includes(getContractStatus(c).label)).length,
-  [contracts]);
+  const availableYears = React.useMemo(() => 
+    sortOptions(Array.from(new Set(reports.map((r: any) => r.year.toString()))).map(y => ({ label: y, value: y }))),
+  [reports]);
 
-  const contractCompensations = React.useMemo(() => {
-    return contracts.slice(0, 5).map((contract: any) => {
-      const license = licenses.find((l: any) => l.id === contract.licenseId);
-      const contractRoyalties = reports
-        .filter((r: any) => r.contractId === contract.id)
-        .reduce((acc: number, r: any) => acc + r.royaltyValue, 0);
-      const progress = Math.min((contractRoyalties / (contract.minimumGuarantee || 1)) * 100, 100);
-      
+  const valueTypes = [
+    { label: 'Quantidades', value: 'quantity' },
+    { label: 'Faturamento Bruto', value: 'totalValue' },
+    { label: 'Impostos', value: 'taxes' },
+    { label: 'Valor Líquido', value: 'netValue' },
+    { label: 'Custo Produto', value: 'totalProductCost' },
+    { label: 'Valor Royalties', value: 'royaltyValue' },
+    { label: 'Valor CMF', value: 'cmfValue' },
+    { label: 'Margem Real', value: 'realValue' }
+  ];
+
+  const processedReports = React.useMemo(() => {
+    return reports.filter((r: any) => {
+      const product = products.find((p: any) => p.id === r.productId);
+      const matchLicense = filterLicenseIds.length === 0 || filterLicenseIds.includes(r.licenseId);
+      const matchLine = filterLineIds.length === 0 || filterLineIds.includes(r.lineId);
+      const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(product?.categoryId);
+      const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(product?.launchYear?.toString());
+      return matchLicense && matchLine && matchCategory && matchLaunchYear;
+    }).map((r: any) => {
+      const product = products.find((p: any) => p.id === r.productId);
+      const category = categories?.find((c: any) => c.id === product?.categoryId);
+      const license = licenses.find((l: any) => l.id === r.licenseId);
+      const line = lines.find((l: any) => l.id === r.lineId);
+      const contract = contracts.find((c: any) => c.id === r.contractId);
+
+      const unitCost = product?.custo_unitario || 0;
+      const totalProductCost = r.quantity * unitCost;
+      const taxes = (r.totalValue || 0) - r.netValue;
+      const realValue = r.netValue - totalProductCost - (r.royaltyValue || 0) - (r.cmfValue || 0);
+      const marginPercentage = r.netValue > 0 ? (realValue / r.netValue) * 100 : 0;
+
       return {
-        id: contract.id,
-        licenseName: license?.nomelicenciador || 'Licenciador',
-        contractNumber: contract.contractNumber || contract.id.slice(0, 5),
-        contractRoyalties,
-        minimumGuarantee: contract.minimumGuarantee,
-        currency: contract.currency,
-        progress
+        ...r,
+        productName: product?.name || r.productName || '-',
+        sku: product?.sku || '-',
+        ean: product?.ean || '-',
+        imageUrl: product?.imageUrl,
+        categoryName: category?.nomeCategoriaProduto || '-',
+        lineName: line?.nomelinha || '-',
+        licenseName: license?.nomelicenciador || '-',
+        contractNumber: contract?.contractNumber || '-',
+        launchYear: product?.launchYear || '-',
+        unitCost,
+        totalProductCost,
+        taxes,
+        realValue,
+        marginPercentage
       };
     });
-  }, [contracts, licenses, reports]);
+  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears]);
 
-  const pendingPayments = React.useMemo(() => 
-    payments.filter((p: any) => p.status === 'pending').slice(0, 5),
-  [payments]);
+  const summaryGrid = React.useMemo(() => {
+    const years = Array.from(new Set(processedReports.map((r: any) => r.year))).sort((a: any, b: any) => (b as any) - (a as any));
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+    const grid: any = {};
+
+    years.forEach((y: any) => {
+      grid[y] = {};
+      months.forEach((m: any) => {
+        grid[y][m] = 0;
+      });
+    });
+
+    processedReports.forEach((r: any) => {
+      const yKey = r.year;
+      const mKey = r.month;
+      if (!grid[yKey]) grid[yKey] = {};
+      grid[yKey][mKey] = (grid[yKey][mKey] || 0) + ((r as any)[summaryValueType] || 0);
+    });
+
+    return { years, months, grid };
+  }, [processedReports, summaryValueType]);
+
+  const { items: sortedListing, requestSort, sortConfig } = useSortableData(processedReports, { key: 'realValue', direction: 'desc' });
+  const paginatedListing = sortedListing.slice(0, itemsPerPage);
+
+  const monthsBR = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="Cadastros Base" 
-          value={`${licenses.length} Licenciadores`}
-          icon={<Building2 className="text-indigo-600" />}
-          trend={`${lines.length} Linhas | ${products.length} Produtos`}
-          color="indigo"
-        />
-        <StatCard 
-          title="Royalties Acumulados" 
-          value={`R$ ${totalRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-          icon={<TrendingUp className="text-emerald-600" />}
-          trend="+12.5% vs mês anterior"
-          color="emerald"
-        />
-        <StatCard 
-          title="Mínimo Garantido Total" 
-          value={`R$ ${totalMG.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-          icon={<CheckCircle2 className="text-blue-600" />}
-          trend={`${activeContractsCount} contratos vigentes`}
-          color="blue"
-        />
-        <StatCard 
-          title="Pagamentos Efetuados" 
-          value={`R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-          icon={<CreditCard className="text-amber-600" />}
-          trend="R$ 15.400,00 pendentes"
-          color="amber"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Compensação de MG por Contrato</CardTitle>
-            <CardDescription>Status de amortização do mínimo garantido</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {contractCompensations.map((comp: any) => {
-                return (
-                  <div key={comp.id} className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-slate-700">
-                        {comp.licenseName} - {comp.contractNumber}
-                      </span>
-                      <span className="text-slate-500">
-                        {getCurrencySymbol(comp.currency || 'BRL')} {comp.contractRoyalties.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {getCurrencySymbol(comp.currency || 'BRL')} {comp.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-500 ${comp.progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                        style={{ width: `${comp.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+      {/* 1. Resumo por Período */}
+      <Card className="border-slate-200 shadow-sm overflow-hidden rounded-[20px]">
+        <CardHeader className="bg-white border-b border-slate-100 py-6 px-8">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <TrendingUp size={22} className="text-blue-600" />
+              <CardTitle className="text-xl font-bold text-slate-800">Resumo de produção e custos</CardTitle>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Próximos Pagamentos</CardTitle>
-            <CardDescription>Parcelas de MG e Royalties vencendo em breve</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {pendingPayments.map((payment: any) => (
-                <div key={payment.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-md border border-slate-200">
-                      <Calendar size={18} className="text-slate-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">Parcela MG</p>
-                      <p className="text-xs text-slate-500">{formatDateBR(payment.date)}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-slate-900">
-                      {getCurrencySymbol(contracts.find((c: any) => c.id === payment.contractId)?.currency || 'BRL')} {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </p>
-                    <Badge variant="outline" className="text-[10px] uppercase font-bold text-amber-600 border-amber-200 bg-amber-50">Pendente</Badge>
-                  </div>
-                </div>
-              ))}
-              {pendingPayments.length === 0 && (
-                <div className="text-center py-8 text-slate-400">
-                  Nenhum pagamento pendente encontrado.
-                </div>
-              )}
+            <div className="bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
+              {valueTypes.find(v => v.value === summaryValueType)?.label}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Cronograma de MG</CardTitle>
-            <CardDescription>Datas e valores contratuais de MG</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[300px] pr-4">
-              <div className="space-y-4">
-                {(() => {
-                  const installments = contracts
-                    .filter((c: any) => ['Ativo', 'Ativo (sell-off)'].includes(getContractStatus(c).label))
-                    .flatMap((c: any) => (c.mgInstallments || []).map((inst: any) => {
-                      const lic = licenses.find((l: any) => l.id === c.licenseId);
-                      return {
-                        ...inst,
-                        contractId: c.id,
-                        contractNumber: c.contractNumber || c.id.slice(0, 5),
-                        licenseName: lic?.nomelicenciador || (c.licenseId ? `ID: ${c.licenseId.slice(0, 5)}` : 'Licenciador'),
-                        currency: c.currency || 'BRL'
-                      };
-                    }));
-
-                  const groupedByMonth = installments.reduce((acc: any, inst: any) => {
-                    const dateObj = inst.dueDate ? new Date(inst.dueDate) : null;
-                    const isValidDate = dateObj && !isNaN(dateObj.getTime());
-                    const monthKey = isValidDate ? dateObj.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }) : 'Data não definida';
-                    if (!acc[monthKey]) acc[monthKey] = {};
-                    
-                    const dateKey = isValidDate ? dateObj.toISOString().split('T')[0] : 'Data não definida';
-                    if (!acc[monthKey][dateKey]) acc[monthKey][dateKey] = [];
-                    
-                    acc[monthKey][dateKey].push(inst);
-                    return acc;
-                  }, {});
-
-                  const sortedMonths = Object.keys(groupedByMonth).sort((a, b) => {
-                    if (a === 'Data não definida') return 1;
-                    if (b === 'Data não definida') return -1;
-                    // To sort months correctly, we need a date from them
-                    const getFirstDate = (monthStr: string) => {
-                      const dates = Object.keys(groupedByMonth[monthStr]);
-                      const validDate = dates.find(d => d !== 'Data não definida');
-                      return validDate ? new Date(validDate).getTime() : 0;
-                    };
-                    return getFirstDate(a) - getFirstDate(b);
-                  });
-
-                  return sortedMonths.map(month => (
-                    <div key={month} className="space-y-4">
-                      <h2 className="text-sm font-bold text-blue-600 uppercase border-b border-blue-100 pb-1">{month}</h2>
-                      {Object.keys(groupedByMonth[month])
-                        .sort((a, b) => {
-                          if (a === 'Data não definida') return 1;
-                          if (b === 'Data não definida') return -1;
-                          return new Date(a).getTime() - new Date(b).getTime();
-                        })
-                        .map(date => (
-                          <div key={date} className="space-y-2 pl-2">
-                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatDateBR(date)}</h3>
-                            {groupedByMonth[month][date]
-                              .sort((a: any, b: any) => a.licenseName.localeCompare(b.licenseName))
-                              .map((inst: any, idx: number) => {
-                                const isPaid = payments.some((p: any) => 
-                                  p.contractId === inst.contractId && 
-                                  p.type === 'mg' && 
-                                  p.installmentNumber === inst.installmentNumber &&
-                                  p.status === 'paid'
-                                );
-                                return (
-                                  <div key={`${inst.contractId}-${idx}`} className="flex items-center justify-between p-3 rounded-lg bg-white border border-slate-100 shadow-sm">
-                                    <div className="flex items-center gap-3">
-                                      <div className="p-2 bg-slate-50 rounded-md border border-slate-100 text-blue-500">
-                                        <FileText size={16} />
-                                      </div>
-                                      <div>
-                                        <div className="flex items-center gap-2">
-                                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{inst.licenseName}</p>
-                                          {isPaid ? (
-                                            <Badge className="h-4 text-[8px] bg-emerald-100 text-emerald-700 border-none px-1">Pago</Badge>
-                                          ) : (
-                                            <Badge className="h-4 text-[8px] bg-amber-100 text-amber-700 border-none px-1">Pendente</Badge>
-                                          )}
-                                        </div>
-                                        <p className="text-sm font-medium text-slate-900">Parcela {inst.installmentNumber} {inst.year ? `(${inst.year})` : ''}</p>
-                                      </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-sm font-bold text-slate-900">
-                                        {getCurrencySymbol(inst.currency)} {Number(inst.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                      </p>
-                                      <p className="text-[10px] text-slate-400">Contrato: {inst.contractNumber}</p>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        ))}
-                    </div>
-                  ));
-                })()}
-                {contracts.every(c => !(c.mgInstallments && c.mgInstallments.length > 0)) && (
-                  <div className="text-center py-8 text-slate-400">
-                    Nenhum cronograma de MG definido nos contratos ativos.
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon, trend, color }: any) {
-  const colors: any = {
-    emerald: 'bg-emerald-50 text-emerald-600',
-    blue: 'bg-blue-50 text-blue-600',
-    amber: 'bg-amber-50 text-amber-600',
-    indigo: 'bg-indigo-50 text-indigo-600'
-  };
-
-  return (
-    <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="p-6">
-        <div className="flex justify-between items-start mb-4">
-          <div className={`p-2.5 rounded-xl ${colors[color]}`}>
-            {icon}
           </div>
-          <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none">
-            Este Mês
-          </Badge>
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className="text-2xl font-bold text-slate-900">{value}</p>
-        </div>
-        <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2 text-xs text-slate-400">
-          <TrendingUp size={14} className="text-emerald-500" />
-          <span>{trend}</span>
-        </div>
-      </CardContent>
-    </Card>
+          
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Licenciadores</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(licenses.map((l: any) => ({ label: l.nomelicenciador, value: l.id })))}
+                selectedValues={filterLicenseIds}
+                onChange={setFilterLicenseIds}
+                placeholder="Todos"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Linhas</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(lines.map((l: any) => ({ label: l.nomelinha, value: l.id })))}
+                selectedValues={filterLineIds}
+                onChange={setFilterLineIds}
+                placeholder="Todas"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Categorias</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(categories.map((c: any) => ({ label: c.nomeCategoriaProduto, value: c.id })))}
+                selectedValues={filterCategoryIds}
+                onChange={setFilterCategoryIds}
+                placeholder="Todas"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Ano de lançamento</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={availableYears}
+                selectedValues={filterLaunchYears}
+                onChange={setFilterLaunchYears}
+                placeholder="Todos"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Tipo de Valor</Label>
+              <Select value={summaryValueType} onValueChange={setSummaryValueType}>
+                <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {valueTypes.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-4 w-32 text-center border-r border-slate-50">Ano</th>
+                  {monthsBR.map(m => <th key={m} className="px-2 py-4 text-center border-r border-slate-50">{m}</th>)}
+                  <th className="px-6 py-4 text-center">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {summaryGrid.years.map(year => {
+                  const isExpanded = expandedYears.includes(year);
+                  let yearTotal = 0;
+                  return (
+                    <React.Fragment key={year}>
+                      <tr 
+                        className="hover:bg-slate-50/30 cursor-pointer transition-colors"
+                        onClick={() => setExpandedYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year])}
+                      >
+                        <td className="px-6 py-4 font-bold text-slate-800 flex items-center justify-center gap-2 border-r border-slate-50">
+                          <span className="text-slate-300">
+                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          </span>
+                          {year}
+                        </td>
+                        {summaryGrid.months.map(m => {
+                          const val = (summaryGrid.grid[year as any] && summaryGrid.grid[year as any][m as any]) || 0;
+                          yearTotal += val;
+                          return (
+                            <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-slate-400">
+                              {val === 0 ? '0' : summaryValueType === 'quantity' ? val.toLocaleString('pt-BR') : val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </td>
+                          );
+                        })}
+                        <td className="px-6 py-4 text-right font-bold text-emerald-600 bg-emerald-50/10">
+                          {summaryValueType === 'quantity' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </td>
+                      </tr>
+                      {/* Expansion Row - Variation % can go here if needed, but image doesn't show it */}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+              <tfoot className="bg-slate-50 font-bold border-t border-slate-100">
+                <tr>
+                  <td className="px-6 py-4 text-slate-800 border-r border-slate-50 uppercase tracking-widest text-[10px]">Totais</td>
+                  {summaryGrid.months.map(m => {
+                    let colTotal = 0;
+                    summaryGrid.years.forEach(y => colTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0);
+                    return (
+                      <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-emerald-600">
+                        {summaryValueType === 'quantity' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </td>
+                    );
+                  })}
+                  <td className="px-6 py-4 text-right text-emerald-700 bg-emerald-50 border-none rounded-br-[20px]">
+                    {(() => {
+                      let grandTotal = 0;
+                      summaryGrid.years.forEach(y => summaryGrid.months.forEach(m => grandTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0));
+                      return summaryValueType === 'quantity' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                    })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 2. Detalhado por Produto */}
+      <Card className="border-slate-200 shadow-sm overflow-hidden rounded-[20px]">
+        <CardHeader className="bg-white border-b border-slate-100 py-6 px-8">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <CardTitle className="text-xl font-bold text-slate-800">Produtos</CardTitle>
+              <CardDescription className="text-xs text-slate-400 mt-1">Gerencie os produtos vinculados às linhas</CardDescription>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-xs text-slate-400">Visualização:</Label>
+              <Select value={itemsPerPage.toString()} onValueChange={v => setItemsPerPage(parseInt(v))}>
+                <SelectTrigger className="w-24 h-9 text-xs rounded-xl bg-slate-50 border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[150px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Categoria</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(categories.map((c: any) => ({ label: c.nomeCategoriaProduto, value: c.id })))}
+                selectedValues={filterCategoryIds}
+                onChange={setFilterCategoryIds}
+                placeholder="Todas"
+              />
+            </div>
+            <div className="flex-1 min-w-[150px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Linha</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(lines.map((l: any) => ({ label: l.nomelinha, value: l.id })))}
+                selectedValues={filterLineIds}
+                onChange={setFilterLineIds}
+                placeholder="Todas"
+              />
+            </div>
+            <div className="flex-1 min-w-[150px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Licenciador</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={sortOptions(licenses.map((l: any) => ({ label: l.nomelicenciador, value: l.id })))}
+                selectedValues={filterLicenseIds}
+                onChange={setFilterLicenseIds}
+                placeholder="Todos"
+              />
+            </div>
+            <div className="flex-1 min-w-[150px] space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Ano</Label>
+              <MultiSelectDropdown
+                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
+                options={availableYears}
+                selectedValues={filterLaunchYears}
+                onChange={setFilterLaunchYears}
+                placeholder="Todos"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto max-h-[800px] scrollbar-thin">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded" /></th>
+                  <th className="px-6 py-4 font-semibold">Imagem</th>
+                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 text-blue-600" />
+                  <SortableHeader label="Nome" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
+                  <SortableHeader label="Categoria" sortKey="categoryName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
+                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
+                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
+                  <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4" />
+                  <th className="px-6 py-4 text-right">Faturamento Bruto</th>
+                  <th className="px-6 py-4 text-right text-rose-600">Impostos</th>
+                  <th className="px-6 py-4 text-right">Valor Líquido</th>
+                  <th className="px-6 py-4 text-right text-rose-600">Custo Prod.</th>
+                  <th className="px-6 py-4 text-right text-rose-600">Royalties</th>
+                  <th className="px-6 py-4 text-right text-rose-600">CMF</th>
+                  <SortableHeader label="Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right text-blue-600 bg-emerald-50/20" />
+                  <th className="px-6 py-4 text-right text-blue-700 bg-blue-50/30">% Margem</th>
+                  <th className="px-6 py-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedListing.map((row: any) => (
+                  <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
+                    <td className="px-6 py-4"><input type="checkbox" className="rounded" /></td>
+                    <td className="px-6 py-4">
+                      <div className="w-10 h-10 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1">
+                        {row.imageUrl ? (
+                          <img src={row.imageUrl} alt="" className="max-w-full max-h-full object-contain mix-blend-multiply" />
+                        ) : (
+                          <Package size={16} className="text-slate-300" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-slate-800">{row.sku}</td>
+                    <td className="px-6 py-4">
+                      <div className="max-w-[200px] truncate font-medium text-slate-700" title={row.productName}>{row.productName}</div>
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.categoryName}</td>
+                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.lineName}</td>
+                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.licenseName}</td>
+                    <td className="px-6 py-4 text-slate-500 whitespace-nowrap text-center">{row.launchYear}</td>
+                    <td className="px-6 py-4 text-right text-slate-700">R$ {row.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.taxes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-slate-900">R$ {row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.totalProductCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right text-rose-600">R$ {row.cmfValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right font-bold text-emerald-600 bg-emerald-50/10">R$ {row.realValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-6 py-4 text-right font-bold text-blue-700 bg-blue-50/20">{row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
+                          <Pencil size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-600 hover:bg-red-50">
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -8192,7 +8287,7 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
   const [type, setType] = useState(payment.type || 'mg');
   const [identification, setIdentification] = useState(payment.identification || '');
   const [dueDate, setDueDate] = useState(payment.dueDate || '');
-  const [amount, setAmount] = useState(payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+  const [amount, setAmount] = useState(payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [currency, setCurrency] = useState(payment.currency || 'BRL');
   const [date, setDate] = useState(payment.date || '');
   const [paymentOrder, setPaymentOrder] = useState(payment.paymentOrder || '');
@@ -8573,6 +8668,275 @@ function EditPaymentDialog({ payment, contracts, licenses }: { payment: any, con
               ) : (
                 'Atualizar Pagamento'
               )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditObligationDialog({ obligation, contracts, licenses }: { obligation: any, contracts: Contract[], licenses: License[] }) {
+  const [open, setOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!open) setShowDeleteConfirm(false);
+  }, [open]);
+
+  const [licenseId, setLicenseId] = useState(obligation.licenseId || '');
+  const [contractId, setContractId] = useState(obligation.contractId || '');
+  const [type, setType] = useState(obligation.type || 'CMF');
+  const [dueDate, setDueDate] = useState(obligation.dueDate || '');
+  const [amount, setAmount] = useState(obligation.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const [currency, setCurrency] = useState(obligation.currency || 'BRL');
+  const [notes, setNotes] = useState(obligation.notes || '');
+  const [year, setYear] = useState(String(obligation.year || ''));
+  const [month, setMonth] = useState(String(obligation.month || ''));
+  const [status, setStatus] = useState<'pending' | 'paid'>(obligation.status || 'pending');
+  const [invoice, setInvoice] = useState(obligation.invoice || '');
+  const [paymentDate, setPaymentDate] = useState(obligation.paymentDate || '');
+  
+  const [responsible, setResponsible] = useState('');
+  const [identification, setIdentification] = useState('');
+  const [paymentOrder, setPaymentOrder] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [documentUrl, setDocumentUrl] = useState(obligation.documentUrl || '');
+  const [documentName, setDocumentName] = useState(obligation.documentName || '');
+
+  const filteredContracts = contracts.filter(c => !licenseId || c.licenseId === licenseId);
+
+  const handleDelete = async () => {
+    try {
+      await deleteDoc(doc(db, 'cronograma_obrigacoes', obligation.id));
+      toast.success('Obrigação excluída!');
+      setOpen(false);
+    } catch (err) {
+      toast.error('Erro ao excluir obrigação.');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUploading(true);
+    try {
+      let finalDocumentUrl = documentUrl;
+      let finalDocumentName = documentName;
+
+      if (file) {
+        finalDocumentUrl = await uploadFile(file, `obligations/${Date.now()}_${file.name}`);
+        finalDocumentName = file.name;
+      }
+
+      const parsedAmount = parseCurrencyBR(amount);
+
+      if (status === 'paid') {
+        await addDoc(collection(db, 'payments'), {
+          contractId,
+          licenseId,
+          type: type === 'MG' ? 'mg' : type === 'CMF' ? 'marketing' : 'excess',
+          amount: parsedAmount,
+          currency,
+          dueDate,
+          date: paymentDate || new Date().toISOString().split('T')[0],
+          status: 'paid',
+          notes: `Pago via Cronograma: ${notes}`,
+          year: Number(year),
+          month: Number(month),
+          invoice,
+          responsible,
+          identification,
+          paymentOrder,
+          documentUrl: finalDocumentUrl,
+          documentName: finalDocumentName,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
+        await updateDoc(doc(db, 'cronograma_obrigacoes', obligation.id), {
+          status: 'paid',
+          paymentDate: paymentDate || new Date().toISOString().split('T')[0],
+          invoice,
+          notes,
+          documentUrl: finalDocumentUrl,
+          documentName: finalDocumentName,
+          updatedAt: serverTimestamp()
+        });
+        
+        toast.success('Obrigação registrada como paga!');
+      } else {
+        await updateDoc(doc(db, 'cronograma_obrigacoes', obligation.id), {
+          licenseId,
+          contractId,
+          type,
+          dueDate,
+          amount: parsedAmount,
+          currency,
+          notes,
+          year: Number(year),
+          month: Number(month),
+          invoice,
+          status: 'pending',
+          documentUrl: finalDocumentUrl,
+          documentName: finalDocumentName,
+          updatedAt: serverTimestamp()
+        });
+        toast.success('Obrigação atualizada!');
+      }
+      setOpen(false);
+    } catch (err) {
+      toast.error('Erro ao salvar.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        nativeButton={true}
+        render={
+          <button className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors">
+            <Pencil size={15} />
+          </button>
+        }
+      />
+      <DialogContent className="max-w-2xl overflow-y-auto max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-blue-600" />
+            Editar Obrigação
+          </DialogTitle>
+          <DialogDescription>
+            Ajuste os detalhes. Ao marcar como "Pago", o sistema gera um registro financeiro.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-[11px]">Licenciador</Label>
+              <Select onValueChange={setLicenseId} value={licenseId}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {licenses.map(l => (
+                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Contrato</Label>
+              <Select onValueChange={setContractId} value={contractId}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {filteredContracts.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id.slice(0,8)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <Label className="text-[11px]">Tipo</Label>
+              <Select onValueChange={setType} value={type}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MG">MG</SelectItem>
+                  <SelectItem value="CMF">CMF</SelectItem>
+                  <SelectItem value="Excess">Royalties</SelectItem>
+                  <SelectItem value="Outros">Outros</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Ano</Label>
+              <Input className="h-9" type="number" value={year} onChange={(e) => setYear(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Mês (Opcional)</Label>
+              <Input className="h-9" type="number" value={month} onChange={(e) => setMonth(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <Label className="text-[11px]">Valor</Label>
+              <Input 
+                className="h-9"
+                value={amount} 
+                onChange={(e) => setAmount(formatCurrencyBR(e.target.value))} 
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Vencimento</Label>
+              <Input className="h-9" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Status</Label>
+              <Select onValueChange={(v: any) => setStatus(v)} value={status}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="paid">Pago</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {status === 'paid' && (
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Data do Pagamento</Label>
+                  <Input className="h-9" type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Responsável</Label>
+                  <Input className="h-9" value={responsible} onChange={(e) => setResponsible(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Doc/Hash</Label>
+                  <Input className="h-9" value={identification} onChange={(e) => setIdentification(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Ordem Pgto</Label>
+                  <Input className="h-9" value={paymentOrder} onChange={(e) => setPaymentOrder(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label className="text-[11px]">Anexar Comprovante</Label>
+            <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="h-9 text-xs" />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[11px]">Observações</Label>
+            <textarea 
+              className="w-full min-h-[60px] p-2 border rounded-md text-xs outline-none focus:ring-1 focus:ring-blue-500"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            {!showDeleteConfirm ? (
+              <Button type="button" variant="outline" className="flex-1 text-red-600 h-9" onClick={() => setShowDeleteConfirm(true)}>Excluir</Button>
+            ) : (
+              <div className="flex-1 flex gap-2">
+                <Button type="button" variant="destructive" className="flex-1 h-9" onClick={handleDelete}>Confirmar</Button>
+                <Button type="button" variant="ghost" className="h-9" onClick={() => setShowDeleteConfirm(false)}>Voltar</Button>
+              </div>
+            )}
+            <Button type="submit" className="flex-[2] bg-blue-600 h-9" disabled={uploading}>
+              {uploading ? <Loader2 className="animate-spin" /> : 'Salvar'}
             </Button>
           </div>
         </form>
@@ -9198,6 +9562,16 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
     }
   };
 
+  const handleDeleteObligation = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este registro de obrigação?')) return;
+    try {
+      await deleteDoc(doc(db, 'cronograma_obrigacoes', id));
+      toast.success('Obrigação excluída!');
+    } catch (err) {
+      toast.error('Erro ao excluir obrigação.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Resumo da Programação */}
@@ -9435,6 +9809,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                   <SortableHeader label="Status" sortKey="status" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Data Pgto" sortKey="paymentDate" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <th className="px-4 py-3 text-center">Doc</th>
+                  <th className="px-4 py-3 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -9446,7 +9821,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.installmentNumber}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.year}{ob.month ? ` - Mês ${ob.month}` : ''}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
-                      {getCurrencySymbol(ob.currency)} {ob.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      {getCurrencySymbol(ob.currency)} {ob.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(ob.dueDate)}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.invoice}</td>
@@ -9478,11 +9853,23 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <EditObligationDialog obligation={ob} contracts={contracts} licenses={licenses} />
+                        <button 
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                          onClick={() => handleDeleteObligation(ob.id)}
+                          title="Excluir"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {obligations.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400 italic">Nenhuma parcela ou obrigação detectada.</td>
+                    <td colSpan={13} className="px-4 py-8 text-center text-slate-400 italic">Nenhuma parcela ou obrigação detectada.</td>
                   </tr>
                 )}
               </tbody>
@@ -9517,13 +9904,13 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
           <table className="w-full text-sm text-left min-w-[1200px]">
             <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-sm">
               <tr>
-                <SortableHeader label="Tipo" sortKey="typeDisplay" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Contrato" sortKey="contractNumber" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Tipo" sortKey="typeDisplay" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Identificação" sortKey="identification" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
+                <SortableHeader label="Valor" sortKey="amount" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Dt Vencimento" sortKey="dueDate" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Dt Pagamento" sortKey="date" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
-                <SortableHeader label="Valor" sortKey="amount" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Invoice / NF" sortKey="invoice" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <SortableHeader label="Status" sortKey="status" currentSort={paymentSortConfig} onSort={requestPaymentSort} />
                 <th className="px-4 py-3 text-center">Doc</th>
@@ -9538,23 +9925,23 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                 
                 return (
                     <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : '')}>
+                        {license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-'))}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-'))}</td>
                       <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">
                         {payment.type === 'mg' ? 'MG' : 
                          payment.type === 'excess' ? 'Royalties' : 
                          payment.type === 'marketing' ? 'Marketing' : 'Outros'}
                       </td>
-                      <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : '')}>
-                        {license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (payment.licenseId ? `ID: ${payment.licenseId.slice(0,5)}` : '-'))}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-slate-600">{contract?.contractNumber || (contract?.id ? `ID: ${contract.id.slice(0,5)}` : (payment.contractId ? `ID: ${payment.contractId.slice(0,5)}` : '-'))}</td>
                       <td className="px-4 py-3 text-[13px] text-slate-600 truncate max-w-[100px]" title={payment.identification}>
                         {payment.identification || '-'}
                       </td>
+                      <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
+                        {symbol} {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
                       <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(payment.dueDate)}</td>
                       <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(payment.date)}</td>
-                      <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
-                        {symbol} {payment.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </td>
                       <td className="px-4 py-3 text-[13px] text-slate-600">{payment.invoice || '-'}</td>
                       <td className="px-4 py-3 text-[13px]">
                         {payment.status === 'paid' ? (
@@ -10289,6 +10676,7 @@ function ProductCategoriesView({ categories, isAdmin }: { categories: ProductCat
 
 function ProductsView({ products, lines, categories, licenses, isAdmin }: { products: Product[], lines: Line[], categories: ProductCategory[], licenses: License[], isAdmin: boolean }) {
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterSkus, setFilterSkus] = useState<string[]>([]);
   const [filterLine, setFilterLine] = useState<string>('all');
   const [filterLicense, setFilterLicense] = useState<string>('all');
   const [filterYear, setFilterYear] = useState<string>('all');
@@ -10310,6 +10698,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     const licenseId = product.licenseId || line?.licenseId;
     
     if (filterCategory !== 'all' && product.categoryId !== filterCategory) return false;
+    if (filterSkus.length > 0 && !filterSkus.includes(product.sku || '')) return false;
     if (filterLine !== 'all' && product.lineId !== filterLine) return false;
     if (filterLicense !== 'all' && licenseId !== filterLicense) return false;
     if (filterYear !== 'all' && String(product.launchYear) !== filterYear) return false;
@@ -10665,6 +11054,16 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-4 mb-6">
+            <div className="space-y-1 min-w-[250px]">
+              <Label className="text-xs text-slate-500">Produto (SKU - Nome)</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs w-full"
+                options={sortOptions(products.map(p => ({ label: `${p.sku} - ${p.name}`, value: p.sku || '' })))}
+                selectedValues={filterSkus}
+                onChange={setFilterSkus}
+                placeholder="Todos"
+              />
+            </div>
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Categoria</Label>
               <SearchableSelect

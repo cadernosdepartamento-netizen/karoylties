@@ -135,6 +135,26 @@
         "launchYear": { "type": "number", "description": "Ano de lançamento" }
       },
       "required": ["sku", "description", "quantity", "unitPrice", "totalValue"]
+    },
+    "ObligationRecord": {
+      "title": "Registro de Obrigação",
+      "description": "Obrigações financeiras provisionadas (ex: CMF consolidado).",
+      "type": "object",
+      "properties": {
+        "contractId": { "type": "string" },
+        "licenseId": { "type": "string" },
+        "type": { "type": "string" },
+        "year": { "type": "number" },
+        "month": { "type": "number" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["contractId", "licenseId", "type", "year", "month", "amount", "status"]
     }
   },
   "firestore": {
@@ -149,6 +169,7 @@
     "/sales": { "schema": "Sale", "description": "Coleção de vendas externas" },
     "/netsales": { "schema": "Sale", "description": "Coleção de vendas líquidas" },
     "/wholesales": { "schema": "Sale", "description": "Coleção de compras líquidas" },
-    "/fobsales": { "schema": "Sale", "description": "Coleção de vendas FOB" }
+    "/fobsales": { "schema": "Sale", "description": "Coleção de vendas FOB" },
+    "/cronograma_obrigacoes": { "schema": "ObligationRecord", "description": "Coleção de obrigações financeiras provisionadas" }
   }
 }
