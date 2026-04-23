@@ -812,7 +812,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex">
         {/* Sidebar */}
-        <aside className="w-64 bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen">
+        <aside className="w-[218px] bg-white border-r border-slate-200 flex flex-col sticky top-0 h-screen">
           <div className="p-6 flex items-center gap-3">
             <div className="bg-blue-600 p-2 rounded-lg">
               <BarChart3 className="text-white w-6 h-6" />
@@ -5724,7 +5724,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
   const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   const [filterLaunchYears, setFilterLaunchYears] = useState<string[]>([]);
-  const [filterProductIds, setFilterProductIds] = useState<string[]>([]);
+  const [filterSkus, setFilterSkus] = useState<string[]>([]);
   const [summaryValueType, setSummaryValueType] = useState('margem_real'); // Margem Real by default
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
@@ -5744,151 +5744,208 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     { label: 'Margem Real', value: 'margem_real' }
   ];
 
-  const salesByProductMonthYear = React.useMemo(() => {
-    const map: Record<string, { totalValue: number, netValue: number, taxes: number }> = {};
-    sales.forEach(sale => {
+  const summaryGrid = React.useMemo(() => {
+    const grid: Record<number, Record<number, number>> = {};
+    const yearsSet = new Set<number>();
+
+    const initGrid = (y: number, m: number) => {
+      yearsSet.add(y);
+      if (!grid[y]) grid[y] = {};
+      if (grid[y][m] === undefined) grid[y][m] = 0;
+    };
+
+    // 1. Build a lookup for valid products after filtering
+    const validProductsBySku = new Map();
+    const validProductsById = new Map();
+
+    products.forEach((p: any) => {
+      const matchLicense = filterLicenseIds.length === 0 || filterLicenseIds.includes(p.licenseId);
+      const matchLine = filterLineIds.length === 0 || filterLineIds.includes(p.lineId);
+      const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(p.categoryId);
+      const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(String(p.launchYear || ''));
+      const pSku = String(p.sku || '').trim();
+      const matchSku = filterSkus.length === 0 || filterSkus.includes(pSku);
+      
+      if (matchLicense && matchLine && matchCategory && matchLaunchYear && matchSku) {
+        if (pSku) validProductsBySku.set(pSku, p);
+        if (p.id) validProductsById.set(p.id, p);
+      }
+    });
+
+    // 2. Aggregate from ALL Sales
+    sales.forEach((sale: any) => {
+      const sku = String(sale.sku || '').trim();
+      if (!sku) return;
+      
+      const product = validProductsBySku.get(sku);
+      if (!product) return; 
+
       const dateStr = sale.date;
       if (!dateStr) return;
       const date = getSafeDate(dateStr);
       if (isNaN(date.getTime())) return;
       
-      const year = date.getFullYear();
-      const month = date.getMonth() + 1;
-      const sku = (sale.sku || '').trim();
-      const key = `${sku}_${month}_${year}`;
-      
-      if (!map[key]) {
-        map[key] = { totalValue: 0, netValue: 0, taxes: 0 };
-      }
-      
+      const y = date.getFullYear();
+      const m = date.getMonth() + 1;
+      initGrid(y, m);
+
+      const quantity = Number(sale.quantity) || 0;
       const total = Number(sale.totalValue) || Number(sale.totalValue_brl) || 0;
-      const net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
-      const tax = total - net;
+      let net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
       
-      map[key].totalValue += total;
-      map[key].netValue += net;
-      map[key].taxes += tax;
+      const icms = Number(sale.icms) || 0;
+      const pis = Number(sale.pis) || 0;
+      const cofins = Number(sale.cofins) || 0;
+      const ipi = Number(sale.ipi) || 0;
+      const tax = icms + pis + cofins + ipi;
+      
+      if (net === 0 && total > 0) {
+        net = total - tax;
+      }
+      const unitCost = Number(product.custo_unitario) || 0;
+      const totalProdCost = quantity * unitCost;
+
+      if (summaryValueType === 'quantidade') grid[y][m] += quantity;
+      else if (summaryValueType === 'faturamento_bruto') grid[y][m] += total;
+      else if (summaryValueType === 'impostos') grid[y][m] += tax;
+      else if (summaryValueType === 'valor_liquido') grid[y][m] += net;
+      else if (summaryValueType === 'custo_produto') grid[y][m] += totalProdCost;
+      else if (summaryValueType === 'margem_real') grid[y][m] += (net - totalProdCost); 
     });
-    return map;
-  }, [sales]);
 
-  const processedReports = React.useMemo(() => {
-    return reports.filter((r: any) => {
-      const product = products.find((p: any) => p.id === r.productId);
-      const matchLicense = filterLicenseIds.length === 0 || filterLicenseIds.includes(r.licenseId);
-      const matchLine = filterLineIds.length === 0 || filterLineIds.includes(r.lineId);
-      const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(product?.categoryId);
-      const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(product?.launchYear?.toString());
-      const matchProduct = filterProductIds.length === 0 || filterProductIds.includes(r.productId);
-      return matchLicense && matchLine && matchCategory && matchLaunchYear && matchProduct;
-    }).map((r: any) => {
-      const product = products.find((p: any) => p.id === r.productId);
-      const category = categories?.find((c: any) => c.id === product?.categoryId);
-      const license = licenses.find((l: any) => l.id === r.licenseId);
-      const line = lines.find((l: any) => l.id === r.lineId);
-      const contract = contracts.find((c: any) => c.id === r.contractId);
+    // 3. Aggregate from ALL Reports (Royalties, CMF)
+    reports.forEach((r: any) => {
+      const prodId = r.productId;
+      if (!prodId) return;
 
-      const sku = (product?.sku || '').trim();
-      const skuFormatted = product?.sku ? String(product.sku).padStart(6, '0') : '-';
-      const imageUrl = sku ? `https://img.kalunga.com.br/FotosdeProdutos/${sku.padStart(6, '0')}.jpg` : null;
+      const product = validProductsById.get(prodId);
+      if (!product) return; 
 
-      const sKey = `${sku}_${r.month}_${r.year}`;
-      const salesData = salesByProductMonthYear[sKey] || { totalValue: 0, netValue: 0, taxes: 0 };
+      const y = Number(r.year);
+      const m = Number(r.month);
+      if (!y || !m) return;
+      initGrid(y, m);
 
-      const faturamentoBruto = salesData.totalValue;
-      const valorLiquido = salesData.netValue;
-      const impostos = salesData.taxes;
+      const royalty = Number(r.royaltyValue) || 0;
+      const cmf = Number(r.cmfValue) || 0;
 
-      const unitCost = product?.custo_unitario || 0;
-      const totalProductCost = r.quantity * unitCost;
-      const realValue = valorLiquido - totalProductCost - (r.royaltyValue || 0) - (r.cmfValue || 0);
-      const marginPercentage = valorLiquido > 0 ? (realValue / valorLiquido) * 100 : 0;
-
-      return {
-        ...r,
-        productName: product?.name || r.productName || '-',
-        sku: skuFormatted,
-        ean: product?.ean || '-',
-        imageUrl,
-        categoryName: category?.nomeCategoriaProduto || '-',
-        lineName: line?.nomelinha || '-',
-        licenseName: license?.nomelicenciador || '-',
-        contractNumber: contract?.contractNumber || '-',
-        launchYear: product?.launchYear || '-',
-        unitCost,
-        totalProductCost,
-        totalValue: faturamentoBruto,
-        netValue: valorLiquido,
-        taxes: impostos,
-        realValue,
-        marginPercentage,
-        // Portuguese keys for the Tipo de Valor selection
-        quantidade: r.quantity,
-        faturamento_bruto: faturamentoBruto,
-        impostos: impostos,
-        valor_liquido: valorLiquido,
-        custo_produto: totalProductCost,
-        valor_royalties: r.royaltyValue || 0,
-        valor_cmf: r.cmfValue || 0,
-        margem_real: realValue
-      };
+      if (summaryValueType === 'valor_royalties') grid[y][m] += royalty;
+      else if (summaryValueType === 'valor_cmf') grid[y][m] += cmf;
+      else if (summaryValueType === 'margem_real') grid[y][m] -= (royalty + cmf); 
     });
-  }, [reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterProductIds, salesByProductMonthYear]);
 
-  const summaryGrid = React.useMemo(() => {
-    const years = Array.from(new Set(processedReports.map((r: any) => r.year))).sort((a: any, b: any) => (b as any) - (a as any));
+    // Extract properly ordered Years and make sure all grid entries are populated with at least 0
+    const yearsList = Array.from(yearsSet).sort((a, b) => a - b);
     const months = Array.from({ length: 12 }, (_, i) => i + 1);
-    const grid: any = {};
 
-    years.forEach((y: any) => {
-      grid[y] = {};
-      months.forEach((m: any) => {
-        grid[y][m] = 0;
+    yearsList.forEach(y => {
+      months.forEach(m => {
+        if (grid[y][m] === undefined) grid[y][m] = 0;
       });
     });
 
-    processedReports.forEach((r: any) => {
-      const yKey = r.year;
-      const mKey = r.month;
-      if (!grid[yKey]) grid[yKey] = {};
-      grid[yKey][mKey] = (grid[yKey][mKey] || 0) + ((r as any)[summaryValueType] || 0);
-    });
-
-    return { years, months, grid };
-  }, [processedReports, summaryValueType]);
+    return { years: yearsList, months, grid };
+  }, [sales, reports, products, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus, summaryValueType]);
 
   const groupedByProduct = React.useMemo(() => {
-    const map: Record<string, any> = {};
-    processedReports.forEach(r => {
-      const sku = r.sku;
-      if (!map[sku]) {
-        map[sku] = {
-          ...r,
-          quantity: 0,
-          totalValue: 0,
-          netValue: 0,
-          taxes: 0,
-          totalProductCost: 0,
-          royaltyValue: 0,
-          cmfValue: 0,
-          realValue: 0,
-        };
+    // 1. First, compute total sales per SKU directly from the `sales` array
+    const salesAggregated: Record<string, { quantity: number, totalValue: number, netValue: number, taxes: number }> = {};
+    sales.forEach((sale: any) => {
+      const sku = String(sale.sku || '').trim();
+      if (!sku) return;
+      
+      const total = Number(sale.totalValue) || Number(sale.totalValue_brl) || 0;
+      let net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
+      
+      const icms = Number(sale.icms) || 0;
+      const pis = Number(sale.pis) || 0;
+      const cofins = Number(sale.cofins) || 0;
+      const ipi = Number(sale.ipi) || 0;
+      const taxesSum = icms + pis + cofins + ipi;
+      
+      if (net === 0 && total > 0) {
+          net = total - taxesSum;
       }
-      map[sku].quantity += (r.quantity || 0);
-      map[sku].totalValue += (r.totalValue || 0);
-      map[sku].netValue += (r.netValue || 0);
-      map[sku].taxes += (r.taxes || 0);
-      map[sku].totalProductCost += (r.totalProductCost || 0);
-      map[sku].royaltyValue += (r.royaltyValue || 0);
-      map[sku].cmfValue += (r.cmfValue || 0);
-      map[sku].realValue += (r.realValue || 0);
+      
+      if (!salesAggregated[sku]) {
+        salesAggregated[sku] = { quantity: 0, totalValue: 0, netValue: 0, taxes: 0 };
+      }
+      
+      salesAggregated[sku].quantity += Number(sale.quantity) || 0;
+      salesAggregated[sku].totalValue += total;
+      salesAggregated[sku].netValue += net;
+      salesAggregated[sku].taxes += taxesSum;
+    });
+
+    // 2. Compute total royalties and CMF from reports per productId
+    const reportsAggregated: Record<string, { quantity: number, royaltyValue: number, cmfValue: number }> = {};
+    reports.forEach((r: any) => {
+      const prodId = r.productId;
+      if (!prodId) return;
+      
+      if (!reportsAggregated[prodId]) {
+        reportsAggregated[prodId] = { quantity: 0, royaltyValue: 0, cmfValue: 0 };
+      }
+      reportsAggregated[prodId].quantity += Number(r.quantity) || 0;
+      reportsAggregated[prodId].royaltyValue += Number(r.royaltyValue) || 0;
+      reportsAggregated[prodId].cmfValue += Number(r.cmfValue) || 0;
+    });
+
+    // 3. Loop over products, filter them, and build the row
+    const map: Record<string, any> = {};
+    
+    products.forEach((p: any) => {
+      const matchLicense = filterLicenseIds.length === 0 || filterLicenseIds.includes(p.licenseId);
+      const matchLine = filterLineIds.length === 0 || filterLineIds.includes(p.lineId);
+      const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(p.categoryId);
+      const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(String(p.launchYear || ''));
+      const pSku = String(p.sku || '').trim();
+      const matchSku = filterSkus.length === 0 || filterSkus.includes(pSku);
+      
+      if (!(matchLicense && matchLine && matchCategory && matchLaunchYear && matchSku)) {
+        return; 
+      }
+
+      if (!pSku) return;
+
+      const salesData = salesAggregated[pSku] || { quantity: 0, totalValue: 0, netValue: 0, taxes: 0 };
+      const reportData = reportsAggregated[p.id] || { quantity: 0, royaltyValue: 0, cmfValue: 0 };
+
+      if (salesData.totalValue === 0 && reportData.royaltyValue === 0 && salesData.quantity === 0) {
+        return; // Skip products with no activity
+      }
+
+      const skuFormatted = pSku.padStart(6, '0');
+      const category = categories?.find((c: any) => c.id === p.categoryId);
+      const license = licenses.find((l: any) => l.id === p.licenseId);
+      const line = lines.find((l: any) => l.id === p.lineId);
+
+      const unitCost = Number(p.custo_unitario) || 0;
+      const totalProductCost = salesData.quantity * unitCost; // Uses sales quantity
+      const realValue = salesData.netValue - totalProductCost - reportData.royaltyValue - reportData.cmfValue;
+
+      map[pSku] = {
+        id: p.id,
+        sku: skuFormatted,
+        productName: p.name || '-',
+        imageUrl: `https://img.kalunga.com.br/FotosdeProdutos/${skuFormatted}.jpg`,
+        categoryName: category?.nomeCategoriaProduto || '-',
+        lineName: line?.nomelinha || '-',
+        licenseName: license?.nomelicenciador || '-',
+        quantity: salesData.quantity,
+        totalValue: salesData.totalValue,
+        netValue: salesData.netValue,
+        taxes: salesData.taxes,
+        totalProductCost: totalProductCost,
+        royaltyValue: reportData.royaltyValue,
+        cmfValue: reportData.cmfValue,
+        realValue: realValue,
+        marginPercentage: salesData.netValue > 0 ? (realValue / salesData.netValue) * 100 : 0
+      };
     });
     
-    return Object.values(map).map(r => ({
-      ...r,
-      marginPercentage: r.netValue > 0 ? (r.realValue / r.netValue) * 100 : 0
-    }));
-  }, [processedReports]);
+    return Object.values(map);
+  }, [sales, reports, products, categories, licenses, lines, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
   const paginatedListing = sortedListing.slice(0, itemsPerPage);
@@ -5971,9 +6028,9 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100">
                 <tr>
-                  <th className="px-6 py-4 w-32 text-center border-r border-slate-50">Ano</th>
-                  {monthsBR.map(m => <th key={m} className="px-2 py-4 text-center border-r border-slate-50">{m}</th>)}
-                  <th className="px-6 py-4 text-center">Total</th>
+                  <th className="px-6 py-2 w-32 text-center border-r border-slate-50">Ano</th>
+                  {monthsBR.map(m => <th key={m} className="px-2 py-2 text-center border-r border-slate-50">{m}</th>)}
+                  <th className="px-6 py-2 text-center">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -5986,7 +6043,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                         className="hover:bg-slate-50/30 cursor-pointer transition-colors"
                         onClick={() => setExpandedYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year])}
                       >
-                        <td className="px-6 py-4 font-bold text-slate-800 flex items-center justify-center gap-2 border-r border-slate-50">
+                        <td className="px-6 py-2 font-bold text-slate-800 flex items-center justify-center gap-2 border-r border-slate-50">
                           <span className="text-slate-300">
                             {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                           </span>
@@ -5996,13 +6053,13 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                           const val = (summaryGrid.grid[year as any] && summaryGrid.grid[year as any][m as any]) || 0;
                           yearTotal += val;
                           return (
-                            <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-slate-400">
+                            <td key={m} className={`px-2 py-2 text-right pr-4 border-r border-slate-50 ${val === 0 ? 'text-slate-300' : 'text-slate-700 font-medium'}`}>
                               {val === 0 ? '0' : summaryValueType === 'quantidade' ? val.toLocaleString('pt-BR') : val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4 text-right font-bold text-emerald-600 bg-emerald-50/10">
-                          {summaryValueType === 'quantidade' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td className={`px-6 py-2 text-right font-bold bg-emerald-50/10 ${yearTotal === 0 ? 'text-slate-300' : 'text-emerald-600'}`}>
+                          {yearTotal === 0 ? '0' : summaryValueType === 'quantidade' ? yearTotal.toLocaleString('pt-BR') : yearTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
                       </tr>
                       {/* Expansion Row - Variation % can go here if needed, but image doesn't show it */}
@@ -6012,21 +6069,21 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
               </tbody>
               <tfoot className="bg-slate-50 font-bold border-t border-slate-100">
                 <tr>
-                  <td className="px-6 py-4 text-slate-800 border-r border-slate-50 uppercase tracking-widest text-[10px]">Totais</td>
+                  <td className="px-6 py-2 text-slate-800 border-r border-slate-50 uppercase tracking-widest text-[10px] text-center">Totais</td>
                   {summaryGrid.months.map(m => {
                     let colTotal = 0;
                     summaryGrid.years.forEach(y => colTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0);
                     return (
-                      <td key={m} className="px-2 py-4 text-right pr-4 border-r border-slate-50 text-emerald-600">
-                        {summaryValueType === 'quantidade' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      <td key={m} className={`px-2 py-2 text-right pr-4 border-r border-slate-50 ${colTotal === 0 ? 'text-emerald-800' : 'text-emerald-700'}`}>
+                        {colTotal === 0 ? '0' : summaryValueType === 'quantidade' ? colTotal.toLocaleString('pt-BR') : colTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                     );
                   })}
-                  <td className="px-6 py-4 text-right text-emerald-700 bg-emerald-50 border-none rounded-br-[20px]">
+                  <td className="px-6 py-2 text-right text-emerald-700 bg-emerald-50 border-none rounded-br-[20px]">
                     {(() => {
                       let grandTotal = 0;
                       summaryGrid.years.forEach(y => summaryGrid.months.forEach(m => grandTotal += (summaryGrid.grid[y as any] && summaryGrid.grid[y as any][m as any]) || 0));
-                      return summaryValueType === 'quantidade' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                      return grandTotal === 0 ? '0' : summaryValueType === 'quantidade' ? grandTotal.toLocaleString('pt-BR') : grandTotal.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
                     })()}
                   </td>
                 </tr>
@@ -6091,19 +6148,6 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 placeholder="Todos"
               />
             </div>
-            <div className="flex-1 min-w-[200px] space-y-1.5">
-              <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Produto (SKU)</Label>
-              <MultiSelectDropdown
-                className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
-                options={sortOptions(products.map((p: any) => ({ 
-                  label: `${p.sku ? String(p.sku).padStart(6, '0') : '000000'} - ${p.name}`, 
-                  value: p.id 
-                })))}
-                selectedValues={filterProductIds}
-                onChange={setFilterProductIds}
-                placeholder="Todos"
-              />
-            </div>
             <div className="flex-1 min-w-[150px] space-y-1.5">
               <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Ano</Label>
               <MultiSelectDropdown
@@ -6111,6 +6155,22 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 options={availableYears}
                 selectedValues={filterLaunchYears}
                 onChange={setFilterLaunchYears}
+                placeholder="Todos"
+              />
+            </div>
+            
+            {/* SKU Filter */}
+            <div className="min-w-[200px] flex-[2] space-y-1">
+              <Label className="text-[11px] text-slate-400">Código SKU</Label>
+              <MultiSelectDropdown
+                className="h-8 text-xs"
+                options={sortOptions(Array.from(new Set(products.map((p:any) => String(p.sku || "")).filter(Boolean))).map(sku => {
+                  const prod = products.find((p:any) => String(p.sku || "").trim() === String(sku || "").trim());
+                  const displayName = prod ? `${sku} - ${prod.name}` : sku;
+                  return { label: displayName, value: sku };
+                }))}
+                selectedValues={filterSkus}
+                onChange={setFilterSkus}
                 placeholder="Todos"
               />
             </div>
@@ -6122,8 +6182,8 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
               <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded" /></th>
-                  <th className="px-6 py-4 font-normal">Imagem</th>
-                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
+                  <th className="px-3 py-4 w-16 font-normal">Imagem</th>
+                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-3 py-4 w-20 font-normal" />
                   <SortableHeader label="Nome" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
                   <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Faturamento Bruto</th>
                   <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Impostos</th>
@@ -6140,7 +6200,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 {paginatedListing.map((row: any) => (
                   <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4"><input type="checkbox" className="rounded" /></td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-4">
                       <div className="w-10 h-10 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1">
                         {row.imageUrl ? (
                           <img 
@@ -6158,7 +6218,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-700">{row.sku}</td>
+                    <td className="px-3 py-4 text-slate-700 max-w-[100px] truncate" title={row.sku}>{row.sku}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-slate-700">
                       {row.productName}
                     </td>
@@ -7568,8 +7628,10 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               {filteredSales.length > 0 && (
                 <tfoot className="bg-slate-50 font-semibold border-t border-slate-200">
                   <tr>
-                    <td colSpan={3} className="px-4 py-4 text-right text-slate-500 uppercase tracking-wider text-[11px]">Totais</td>
-                    <td className="px-4 py-4 text-sm text-slate-600">{filteredSales.reduce((acc, s) => acc + (Number(s.quantity) || 0), 0).toLocaleString('pt-BR')}</td>
+                    <td colSpan={5} className="px-4 py-4 text-right text-slate-500 uppercase tracking-wider text-[11px]">Totais</td>
+                    <td className="px-4 py-4 text-sm text-slate-600">
+                      {filteredSales.reduce((acc, s) => acc + (Number(s.quantity) || 0), 0).toLocaleString('pt-BR')}
+                    </td>
                     {viewMode === 'individual' && <td className="px-4 py-4 text-right"></td>}
                     <td className="px-4 py-4 text-sm text-slate-600 text-right">
                       {filteredSales.reduce((acc, s) => acc + (Number(s.totalValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -7580,7 +7642,11 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     <td className="px-4 py-4 text-sm text-slate-900 text-right font-bold">
                       {filteredSales.reduce((acc, s) => acc + (Number(s.netValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </td>
-                    {viewMode === 'grouped' && <td className="px-4 py-4"></td>}
+                    {activeTab === 'sales_fob' ? (
+                       <td colSpan={viewMode === 'grouped' ? 3 : 2} className="px-4 py-4 text-right"></td>
+                    ) : (
+                       <td colSpan={viewMode === 'grouped' ? 2 : 1} className="px-4 py-4 text-right"></td>
+                    )}
                   </tr>
                 </tfoot>
               )}
@@ -10228,6 +10294,7 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
               <tr>
                 <SortableHeader label="Nome" sortKey="nomelicenciador" currentSort={sortConfig} onSort={requestSort} />
+                <SortableHeader label="Nome Jurídico" sortKey="nomejurlicenciador" currentSort={sortConfig} onSort={requestSort} />
                 <SortableHeader label="Agentes" sortKey="nomeagente" currentSort={sortConfig} onSort={requestSort} />
                 {isAdmin && <th className="px-4 py-3 text-right">Ações</th>}
               </tr>
@@ -10236,6 +10303,7 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
                 {sortedLicenses.map((license) => (
                   <tr key={license.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-4 font-medium text-slate-900">{license.nomelicenciador || `ID: ${license.id.slice(0,5)}`}</td>
+                    <td className="px-4 py-4 text-slate-600">{license.nomejurlicenciador || '-'}</td>
                     <td className="px-4 py-4 text-blue-600 font-medium">{license.nomeagente || '-'}</td>
                     {isAdmin && (
                       <td className="px-4 py-4 text-right flex justify-end gap-1">
@@ -10250,7 +10318,7 @@ function LicensorsView({ licenses, isAdmin }: { licenses: License[], isAdmin: bo
                 ))}
               {licenses.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
                     Nenhum licenciador cadastrado.
                   </td>
                 </tr>
@@ -10799,13 +10867,13 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     const licenseId = product.licenseId || line?.licenseId;
     
     if (filterCategory !== 'all' && product.categoryId !== filterCategory) return false;
-    if (filterSkus.length > 0 && !filterSkus.includes(product.sku || '')) return false;
+    if (filterSkus.length > 0 && !filterSkus.includes(String(product.sku || '').trim())) return false;
     if (filterLine !== 'all' && product.lineId !== filterLine) return false;
     if (filterLicense !== 'all' && licenseId !== filterLicense) return false;
     if (filterYear !== 'all' && String(product.launchYear) !== filterYear) return false;
     
     return true;
-  }), [products, lines, filterCategory, filterLine, filterLicense, filterYear]);
+  }), [products, lines, filterCategory, filterSkus, filterLine, filterLicense, filterYear]);
 
   const displayProducts = React.useMemo(() => filteredProducts.map(p => {
     const line = lines.find(l => l.id === p.lineId);
@@ -11155,16 +11223,22 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-4 mb-6">
-            <div className="space-y-1 min-w-[250px]">
-              <Label className="text-xs text-slate-500">Produto (SKU - Nome)</Label>
+            {/* SKU Filter */}
+            <div className="min-w-[200px] flex-[2] space-y-1">
+              <Label className="text-[11px] text-slate-400">Código SKU</Label>
               <MultiSelectDropdown
-                className="h-8 text-xs w-full"
-                options={sortOptions(products.map(p => ({ label: `${p.sku} - ${p.name}`, value: p.sku || '' })))}
+                className="h-8 text-xs"
+                options={sortOptions(Array.from(new Set(products.map(p => String(p.sku || "")).filter(Boolean))).map(sku => {
+                  const prod = products.find(p => String(p.sku || "").trim() === String(sku || "").trim());
+                  const displayName = prod ? `${sku} - ${prod.name}` : sku;
+                  return { label: displayName, value: sku };
+                }))}
                 selectedValues={filterSkus}
                 onChange={setFilterSkus}
                 placeholder="Todos"
               />
             </div>
+            
             <div className="space-y-1">
               <Label className="text-xs text-slate-500">Categoria</Label>
               <SearchableSelect
