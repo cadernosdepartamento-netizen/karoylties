@@ -132,7 +132,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
           <Edit2 size={16} />
         </button>
       } />
-      <DialogContent className="max-w-5xl overflow-y-auto max-h-[90vh]">
+      <DialogContent className="max-w-3xl overflow-y-auto max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>Editar Produto</DialogTitle>
           <DialogDescription>Atualize os dados e o histórico de produção do produto.</DialogDescription>
@@ -260,21 +260,21 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                       />
                     </div>
                     <div className="space-y-1">
+                      <Label className="text-xs">Quantidade</Label>
+                      <Input 
+                        type="number" 
+                        value={entry.quantity} 
+                        onChange={(e) => updateEntry(index, 'quantity', parseInt(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <Label className="text-xs">Custo Unitário</Label>
                       <Input 
                         type="number" 
                         step="0.01"
                         value={entry.unitCost} 
                         onChange={(e) => updateEntry(index, 'unitCost', parseFloat(e.target.value) || 0)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Quantidade</Label>
-                      <Input 
-                        type="number" 
-                        value={entry.quantity} 
-                        onChange={(e) => updateEntry(index, 'quantity', parseInt(e.target.value) || 0)}
                         className="h-8 text-xs"
                       />
                     </div>
