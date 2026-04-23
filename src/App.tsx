@@ -143,6 +143,14 @@ interface Line {
   royaltyRate?: number;
   productCategories?: string[];
 }
+interface ProductionEntry {
+  date: string;
+  unitCost: number;
+  quantity: number;
+  totalValue: number;
+  type: 'initial' | 'reprogramming';
+}
+
 interface Product { 
   id: string; 
   lineId: string; 
@@ -153,10 +161,14 @@ interface Product {
   launchYear?: number;
   ean?: string;
   costPrice?: number;
+  productionHistory?: ProductionEntry[];
+  avgUnitCost?: number;
+  totalCostValue?: number;
+  totalQuantityProduced?: number;
   custo_unitario?: number;
   quantidade_produzida?: number;
-  data_producao?: string;
   quantidade_reprogramada?: number;
+  data_producao?: string;
   data_reprogramacao?: string;
   valor_total_custo_producao?: number;
 }
@@ -1901,19 +1913,16 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const [licenseId, setLicenseId] = useState('');
   const [launchYear, setLaunchYear] = useState('');
   const [ean, setEan] = useState('');
-  const [custoUnitario, setCustoUnitario] = useState<string>('0');
-  const [qtdProduzida, setQtdProduzida] = useState<string>('0');
-  const [dataProducao, setDataProducao] = useState('');
-  const [qtdReprogramada, setQtdReprogramada] = useState<string>('0');
-  const [dataReprogramacao, setDataReprogramacao] = useState('');
+  const [history, setHistory] = useState<ProductionEntry[]>([
+    { date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }
+  ]);
 
-  const valorTotalCustoProducao = React.useMemo(() => {
-    const custo = parseFloat(custoUnitario) || 0;
-    const qtdProv = parseInt(qtdProduzida) || 0;
-    const qtdRepr = parseInt(qtdReprogramada) || 0;
-    const finalQtd = qtdRepr > 0 ? qtdRepr : qtdProv;
-    return finalQtd * custo;
-  }, [custoUnitario, qtdProduzida, qtdReprogramada]);
+  const totals = React.useMemo(() => {
+    const totalCostValue = history.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
+    const totalQuantity = history.reduce((sum, entry) => sum + entry.quantity, 0);
+    const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
+    return { totalCostValue, totalQuantity, avgUnitCost };
+  }, [history]);
 
   const handleLineChange = (id: string) => {
     setLineId(id);
@@ -1923,6 +1932,31 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
     } else {
       setLicenseId('');
     }
+  };
+
+  const addReprogramming = () => {
+    setHistory([...history, { 
+      date: new Date().toISOString().split('T')[0], 
+      unitCost: 0, 
+      quantity: 0, 
+      totalValue: 0, 
+      type: 'reprogramming' 
+    }]);
+  };
+
+  const removeEntry = (index: number) => {
+    if (index === 0) return;
+    setHistory(history.filter((_, i) => i !== index));
+  };
+
+  const updateEntry = (index: number, field: keyof ProductionEntry, value: any) => {
+    const newHistory = [...history];
+    const entry = { ...newHistory[index], [field]: value };
+    if (field === 'unitCost' || field === 'quantity') {
+      entry.totalValue = Number(entry.unitCost) * Number(entry.quantity);
+    }
+    newHistory[index] = entry;
+    setHistory(newHistory);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1937,12 +1971,10 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
         licenseId,
         launchYear: launchYear ? Number(launchYear) : null,
         ean,
-        custo_unitario: parseFloat(custoUnitario) || 0,
-        quantidade_produzida: parseInt(qtdProduzida) || 0,
-        data_producao: dataProducao || null,
-        quantidade_reprogramada: parseInt(qtdReprogramada) || 0,
-        data_reprogramacao: dataReprogramacao || null,
-        valor_total_custo_producao: valorTotalCustoProducao,
+        productionHistory: history,
+        avgUnitCost: totals.avgUnitCost,
+        totalCostValue: totals.totalCostValue,
+        totalQuantityProduced: totals.totalQuantity,
         createdAt: serverTimestamp() 
       });
       toast.success('Produto cadastrado com sucesso!');
@@ -1954,11 +1986,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
       setLicenseId('');
       setLaunchYear('');
       setEan('');
-      setCustoUnitario('0');
-      setQtdProduzida('0');
-      setDataProducao('');
-      setQtdReprogramada('0');
-      setDataReprogramacao('');
+      setHistory([{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }]);
     } catch (err) {
       toast.error('Erro ao cadastrar produto.');
     }
@@ -1974,10 +2002,10 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
           </button>
         }
       />
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-5xl overflow-y-auto max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>Novo Produto</DialogTitle>
-          <DialogDescription>Cadastre um novo produto vinculado a uma linha.</DialogDescription>
+          <DialogDescription>Cadastre um novo produto e seu histórico de produção.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="grid grid-cols-2 gap-4">
@@ -2017,8 +2045,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
             </div>
           </div>
 
-          <div className="grid grid-cols-6 gap-4 mt-4">
-            <div className="space-y-2 col-span-2">
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            <div className="space-y-2">
               <Label>Categoria</Label>
               <Select onValueChange={setCategoryId} value={categoryId}>
                 <SelectTrigger>
@@ -2033,90 +2061,107 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="launchYear">Ano de Lançamento</Label>
               <Input id="launchYear" type="number" value={launchYear} onChange={(e) => setLaunchYear(e.target.value)} />
             </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="ean">EAN (Código de Barras)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="ean">EAN</Label>
               <Input id="ean" value={ean} onChange={(e) => setEan(e.target.value)} />
             </div>
           </div>
 
           <div className="border-t border-slate-100 my-4 pt-4">
-            <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-              <Database size={16} className="text-blue-600" /> Custos e Produção
-            </h4>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="custounit">Custo Unitário (R$)</Label>
-                <Input 
-                  id="custounit" 
-                  type="number" 
-                  step="0.01" 
-                  min="0"
-                  value={custoUnitario} 
-                  onChange={(e) => setCustoUnitario(Math.max(0, parseFloat(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Valor Total Custo</Label>
-                <div className="h-9 flex items-center px-3 bg-slate-50 border border-slate-200 rounded-md font-semibold text-blue-700 text-sm">
-                  {valorTotalCustoProducao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                 <Database size={16} className="text-blue-600" /> Custos e Produção
+              </h4>
+              <div className="flex gap-4">
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Custo Médio</p>
+                  <p className="text-sm font-bold text-blue-600">{totals.avgUnitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Total</p>
+                  <p className="text-sm font-bold text-slate-900">{totals.totalCostValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <div className="space-y-2">
-                <Label htmlFor="qtdprod">Qtd Produzida</Label>
-                <Input 
-                  id="qtdprod" 
-                  type="number" 
-                  min="0"
-                  value={qtdProduzida} 
-                  onChange={(e) => setQtdProduzida(Math.max(0, parseInt(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dataprod">Data Produção</Label>
-                <Input 
-                  id="dataprod" 
-                  type="date" 
-                  value={dataProducao} 
-                  onChange={(e) => setDataProducao(e.target.value)} 
-                  className="h-9"
-                />
-              </div>
-            </div>
+            <div className="space-y-3">
+              {history.map((entry, index) => (
+                <div key={index} className={cn(
+                  "p-3 rounded-lg border relative group",
+                  index === 0 ? "bg-blue-50/30 border-blue-100" : "bg-slate-50/30 border-slate-100"
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-tight text-slate-400">
+                      {index === 0 ? 'Produção Inicial' : `Reprogramação #${index}`}
+                    </span>
+                    {index > 0 && (
+                      <button 
+                        type="button" 
+                        onClick={() => removeEntry(index)}
+                        className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all font-medium text-xs"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Data</Label>
+                      <Input 
+                        type="date" 
+                        value={entry.date} 
+                        onChange={(e) => updateEntry(index, 'date', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Custo Unitário</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.unitCost} 
+                        onChange={(e) => updateEntry(index, 'unitCost', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Quantidade</Label>
+                      <Input 
+                        type="number" 
+                        value={entry.quantity} 
+                        onChange={(e) => updateEntry(index, 'quantity', parseInt(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Valor Total</Label>
+                      <div className="h-8 flex items-center px-2 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700">
+                        {(entry.unitCost * entry.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
 
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <div className="space-y-2">
-                <Label htmlFor="qtdreprog">Qtd Reprogramada</Label>
-                <Input 
-                  id="qtdreprog" 
-                  type="number" 
-                  min="0"
-                  value={qtdReprogramada} 
-                  onChange={(e) => setQtdReprogramada(Math.max(0, parseInt(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="datareprog">Data Reprogramação</Label>
-                <Input 
-                  id="datareprog" 
-                  type="date" 
-                  value={dataReprogramacao} 
-                  onChange={(e) => setDataReprogramacao(e.target.value)} 
-                  className="h-9"
-                />
-              </div>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={addReprogramming}
+                className="w-full border-dashed border-slate-300 text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 text-xs h-8"
+              >
+                + Adicionar Reprogramação
+              </Button>
             </div>
           </div>
-          <DialogFooter>
-            <Button type="submit">Salvar Produto</Button>
-          </DialogFooter>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Adicionar Produto</Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
@@ -6166,8 +6211,8 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                 className="h-8 text-xs"
                 options={sortOptions(Array.from(new Set(products.map((p:any) => String(p.sku || "")).filter(Boolean))).map(sku => {
                   const prod = products.find((p:any) => String(p.sku || "").trim() === String(sku || "").trim());
-                  const displayName = prod ? `${sku} - ${prod.name}` : sku;
-                  return { label: displayName, value: sku };
+                  const displayName = prod ? `${sku} - ${prod.name}` : String(sku);
+                  return { label: String(displayName), value: String(sku) };
                 }))}
                 selectedValues={filterSkus}
                 onChange={setFilterSkus}
@@ -10907,27 +10952,53 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
     const grid: Record<number, Record<number, number>> = {};
 
     filtered.forEach(p => {
-      const dateVal = (Number(p.quantidade_reprogramada) > 0 && p.data_reprogramacao) 
-        ? p.data_reprogramacao 
-        : p.data_producao;
-      
-      if (!dateVal) return;
+      const history = p.productionHistory || [];
+      if (history.length === 0) {
+        // Fallback for items without history (if any)
+        const dateVal = (Number(p.quantidade_reprogramada) > 0 && p.data_reprogramacao) 
+          ? p.data_reprogramacao 
+          : p.data_producao;
+        
+        if (!dateVal) return;
 
-      const dt = getSafeDate(dateVal);
-      if (!isNaN(dt.getTime())) {
-        const y = dt.getFullYear();
-        const m = dt.getMonth() + 1;
-        yearsSet.add(y);
-        
-        if (!grid[y]) grid[y] = {};
-        if (!grid[y][m]) grid[y][m] = 0;
-        
-        const val = prodSummaryValueType === 'produced' ? (Number(p.quantidade_produzida) || 0) :
-                    prodSummaryValueType === 'reprogrammed' ? (Number(p.quantidade_reprogramada) || 0) :
-                    (Number(p.valor_total_custo_producao) || 0);
-        
-        grid[y][m] += val;
+        const dt = getSafeDate(dateVal);
+        if (!isNaN(dt.getTime())) {
+          const y = dt.getFullYear();
+          const m = dt.getMonth() + 1;
+          yearsSet.add(y);
+          if (!grid[y]) grid[y] = {};
+          if (!grid[y][m]) grid[y][m] = 0;
+          
+          const val = prodSummaryValueType === 'produced' ? (Number(p.totalQuantityProduced) || 0) :
+                      prodSummaryValueType === 'reprogrammed' ? 0 :
+                      (Number(p.totalCostValue) || 0);
+          
+          grid[y][m] += val;
+        }
+        return;
       }
+
+      history.forEach(entry => {
+        if (!entry.date) return;
+        const dt = getSafeDate(entry.date);
+        if (!isNaN(dt.getTime())) {
+          const y = dt.getFullYear();
+          const m = dt.getMonth() + 1;
+          yearsSet.add(y);
+          if (!grid[y]) grid[y] = {};
+          if (!grid[y][m]) grid[y][m] = 0;
+
+          let val = 0;
+          if (prodSummaryValueType === 'produced') {
+            if (entry.type === 'initial') val = entry.quantity;
+          } else if (prodSummaryValueType === 'reprogrammed') {
+            if (entry.type === 'reprogramming') val = entry.quantity;
+          } else {
+            val = entry.totalValue || (entry.unitCost * entry.quantity) || 0;
+          }
+          grid[y][m] += val;
+        }
+      });
     });
 
     const years = Array.from(yearsSet).sort((a, b) => a - b); // Oldest years first
@@ -11348,9 +11419,9 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                   <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} />
                   <SortableHeader label="EAN" sortKey="ean" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Custo Unit." sortKey="custo_unitario" currentSort={sortConfig} onSort={requestSort} className="text-right" />
-                  <SortableHeader label="Qtd Prod." sortKey="quantidade_produzida" currentSort={sortConfig} onSort={requestSort} className="text-right" />
-                  <SortableHeader label="Total Custo" sortKey="valor_total_custo_producao" currentSort={sortConfig} onSort={requestSort} className="text-right font-semibold bg-blue-50/30" />
+                  <SortableHeader label="Custo Médio" sortKey="avgUnitCost" currentSort={sortConfig} onSort={requestSort} className="text-right" />
+                  <SortableHeader label="Qtd Total" sortKey="totalQuantityProduced" currentSort={sortConfig} onSort={requestSort} className="text-right" />
+                  <SortableHeader label="Inv. Total" sortKey="totalCostValue" currentSort={sortConfig} onSort={requestSort} className="text-right font-semibold bg-blue-50/30" />
                   {isAdmin && <th className="px-4 py-3 text-right bg-slate-50">Ações</th>}
                 </tr>
               </thead>
@@ -11397,18 +11468,13 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                       <td className="px-4 py-4 text-slate-600">{product.launchYear || '-'}</td>
                       <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
                       <td className="px-4 py-4 text-right">
-                        {(product.custo_unitario || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {(product.avgUnitCost || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
-                      <td className="px-4 py-4 text-right">
-                        <div className="flex flex-col items-end">
-                          <span className="text-[13px]">{product.quantidade_produzida || 0}</span>
-                          {(product.quantidade_reprogramada || 0) > 0 && (
-                            <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded font-medium">Repr: {product.quantidade_reprogramada}</span>
-                          )}
-                        </div>
+                      <td className="px-4 py-4 text-right text-slate-600">
+                        {(product.totalQuantityProduced || 0).toLocaleString('pt-BR')}
                       </td>
-                      <td className="px-4 py-4 text-right font-medium text-blue-700 bg-blue-50/10">
-                        {(product.valor_total_custo_producao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      <td className="px-4 py-4 text-right font-semibold text-blue-700 bg-blue-50/10">
+                        {(product.totalCostValue || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
                       {isAdmin && (
                         <td className="px-4 py-4 text-right">

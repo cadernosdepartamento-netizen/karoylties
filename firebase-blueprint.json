@@ -34,12 +34,23 @@
         "licenseId": { "type": "string", "description": "ID do licenciador" },
         "launchYear": { "type": "number", "description": "Ano de lançamento" },
         "ean": { "type": "string", "description": "Código de barras EAN" },
-        "custo_unitario": { "type": "number", "description": "Custo unitário de produção" },
-        "quantidade_produzida": { "type": "number", "description": "Quantidade total produzida" },
-        "data_producao": { "type": "string", "format": "date", "description": "Data da produção original" },
-        "quantidade_reprogramada": { "type": "number", "description": "Quantidade produzida reprogramada" },
-        "data_reprogramacao": { "type": "string", "format": "date", "description": "Data da reprogramação" },
-        "valor_total_custo_producao": { "type": "number", "description": "Valor total investido na produção (calculado)" }
+        "productionHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": { "type": "string", "format": "date" },
+              "unitCost": { "type": "number" },
+              "quantity": { "type": "number" },
+              "totalValue": { "type": "number" },
+              "type": { "type": "string", "enum": ["initial", "reprogramming"] }
+            }
+          },
+          "description": "Histórico de produções e reprogramações"
+        },
+        "avgUnitCost": { "type": "number", "description": "Custo unitário médio (calculado)" },
+        "totalCostValue": { "type": "number", "description": "Valor total investido na produção (calculado)" },
+        "totalQuantityProduced": { "type": "number", "description": "Quantidade total produzida (calculado)" }
       },
       "required": ["lineId", "name"]
     },

@@ -14,13 +14,22 @@ import { cn, sortOptions } from '@/lib/utils';
 interface License { id: string; nomelicenciador: string; nomejurlicenciador: string; nomeagente?: string; descricaolicenciador?: string; }
 interface Line { id: string; nomelinha: string; licenseId: string; }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
+interface ProductionEntry {
+  date: string;
+  unitCost: number;
+  quantity: number;
+  totalValue: number;
+  type: 'initial' | 'reprogramming';
+}
+
 interface Product { 
   id: string; 
   lineId: string; 
   name: string; 
-  custo_unitario?: number;
-  quantidade_produzida?: number;
-  quantidade_reprogramada?: number;
+  productionHistory?: ProductionEntry[];
+  avgUnitCost?: number;
+  totalCostValue?: number;
+  totalQuantityProduced?: number;
   [key: string]: any;
 }
 
@@ -35,12 +44,11 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
   const [launchYear, setLaunchYear] = useState('');
   const [custoUnitario, setCustoUnitario] = useState('');
   const [dataProducao, setDataProducao] = useState('');
-  const [dataReprogramacao, setDataReprogramacao] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!lineId && !categoryId && !licenseId && !name && !sku && !ean && !launchYear && !custoUnitario && !dataProducao && !dataReprogramacao) {
+    if (!lineId && !categoryId && !licenseId && !name && !sku && !ean && !launchYear && !custoUnitario && !dataProducao) {
       return toast.error('Selecione pelo menos um campo para alterar.');
     }
 
@@ -54,11 +62,6 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
       if (sku) baseUpdates.sku = sku;
       if (ean) baseUpdates.ean = ean;
       if (launchYear) baseUpdates.launchYear = Number(launchYear);
-      if (dataProducao) baseUpdates.data_producao = dataProducao;
-      if (dataReprogramacao) baseUpdates.data_reprogramacao = dataReprogramacao;
-
-      const newCusto = custoUnitario ? parseFloat(custoUnitario) : null;
-      if (newCusto !== null) baseUpdates.custo_unitario = newCusto;
 
       await Promise.all(selectedProductIds.map(async (id) => {
         const product = products.find(p => p.id === id);
@@ -66,12 +69,28 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
 
         const updates = { ...baseUpdates };
         
-        // If we updated custo_unitario, we MUST recalculate valor_total_custo_producao
-        if (newCusto !== null) {
-          const qProd = product.quantidade_produzida || 0;
-          const qRepr = product.quantidade_reprogramada || 0;
-          const finalQtd = qRepr > 0 ? qRepr : qProd;
-          updates.valor_total_custo_producao = finalQtd * newCusto;
+        // Handle production history update if cost/date provided
+        if (custoUnitario || dataProducao) {
+          const currentHistory: ProductionEntry[] = product.productionHistory && product.productionHistory.length > 0 
+            ? [...product.productionHistory] 
+            : [{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }];
+          
+          const firstEntry = { ...currentHistory[0] };
+          if (custoUnitario) firstEntry.unitCost = parseFloat(custoUnitario);
+          if (dataProducao) firstEntry.date = dataProducao;
+          firstEntry.totalValue = firstEntry.unitCost * firstEntry.quantity;
+          
+          currentHistory[0] = firstEntry;
+          updates.productionHistory = currentHistory;
+
+          // Recalculate totals
+          const totalCostValue = currentHistory.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
+          const totalQuantity = currentHistory.reduce((sum, entry) => sum + entry.quantity, 0);
+          const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
+
+          updates.totalCostValue = totalCostValue;
+          updates.totalQuantityProduced = totalQuantity;
+          updates.avgUnitCost = avgUnitCost;
         }
 
         await updateDoc(doc(db, 'products', id), updates);
@@ -89,7 +108,6 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
       setLaunchYear('');
       setCustoUnitario('');
       setDataProducao('');
-      setDataReprogramacao('');
       onComplete();
     } catch (err) {
       toast.error('Erro ao atualizar produtos em lote.');
@@ -182,31 +200,29 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
               <Input id="batch-launchYear" type="number" value={launchYear} onChange={(e) => setLaunchYear(e.target.value)} placeholder="Manter atual" />
             </div>
             <div className="space-y-2 col-span-2">
-              <Label htmlFor="batch-ean">EAN (Código de Barras)</Label>
+              <Label htmlFor="batch-ean">EAN</Label>
               <Input id="batch-ean" value={ean} onChange={(e) => setEan(e.target.value)} placeholder="Manter atual" />
             </div>
           </div>
 
           <div className="border-t border-slate-100 my-4 pt-4">
             <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2 text-blue-600">
-               <Database size={16} /> Custos e Produção (Lote)
+               <Database size={16} /> Custos e Produção (Inicial)
             </h4>
             
-            <div className="space-y-2">
-              <Label htmlFor="batch-custo">Custo Unitário (R$)</Label>
-              <Input 
-                id="batch-custo" 
-                type="number" 
-                step="0.01" 
-                min="0"
-                value={custoUnitario} 
-                onChange={(e) => setCustoUnitario(Math.max(0, parseFloat(e.target.value) || 0).toString())} 
-                placeholder="Manter atual"
-              />
-              <p className="text-[10px] text-slate-500 italic">* Atualizar o custo recalcula o valor total de produção de cada item.</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="batch-custo">Custo Unitário (R$)</Label>
+                <Input 
+                  id="batch-custo" 
+                  type="number" 
+                  step="0.01" 
+                  min="0"
+                  value={custoUnitario} 
+                  onChange={(e) => setCustoUnitario(Math.max(0, parseFloat(e.target.value) || 0).toString())} 
+                  placeholder="Manter atual"
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="batch-dataprod">Data Produção</Label>
                 <Input 
@@ -217,17 +233,8 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
                   className="h-9"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="batch-datareprog">Data Reprogramação</Label>
-                <Input 
-                  id="batch-datareprog" 
-                  type="date" 
-                  value={dataReprogramacao} 
-                  onChange={(e) => setDataReprogramacao(e.target.value)} 
-                  className="h-9"
-                />
-              </div>
             </div>
+            <p className="text-[10px] text-slate-500 italic mt-2">* Atualizar o custo inicial recalcula o custo médio de cada item.</p>
           </div>
 
           <div className="flex justify-end gap-2 pt-4">

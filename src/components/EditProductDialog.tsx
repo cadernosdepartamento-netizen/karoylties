@@ -14,6 +14,14 @@ import { cn, sortOptions } from '@/lib/utils';
 interface License { id: string; nomelicenciador: string; nomejurlicenciador: string; nomeagente?: string; descricaolicenciador?: string; }
 interface Line { id: string; nomelinha: string; licenseId: string; }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
+interface ProductionEntry {
+  date: string;
+  unitCost: number;
+  quantity: number;
+  totalValue: number;
+  type: 'initial' | 'reprogramming';
+}
+
 interface Product { 
   id: string; 
   lineId: string; 
@@ -23,12 +31,10 @@ interface Product {
   licenseId?: string;
   launchYear?: number;
   ean?: string;
-  custo_unitario?: number;
-  quantidade_produzida?: number;
-  data_producao?: string;
-  quantidade_reprogramada?: number;
-  data_reprogramacao?: string;
-  valor_total_custo_producao?: number;
+  productionHistory?: ProductionEntry[];
+  avgUnitCost?: number;
+  totalCostValue?: number;
+  totalQuantityProduced?: number;
 }
 
 export function EditProductDialog({ product, lines, categories, licenses }: { product: Product, lines: Line[], categories: ProductCategory[], licenses: License[] }) {
@@ -40,19 +46,17 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
   const [licenseId, setLicenseId] = useState(product.licenseId || '');
   const [launchYear, setLaunchYear] = useState(product.launchYear ? String(product.launchYear) : '');
   const [ean, setEan] = useState(product.ean || '');
-  const [custoUnitario, setCustoUnitario] = useState<string>(String(product.custo_unitario || 0));
-  const [qtdProduzida, setQtdProduzida] = useState<string>(String(product.quantidade_produzida || 0));
-  const [dataProducao, setDataProducao] = useState(product.data_producao || '');
-  const [qtdReprogramada, setQtdReprogramada] = useState<string>(String(product.quantidade_reprogramada || 0));
-  const [dataReprogramacao, setDataReprogramacao] = useState(product.data_reprogramacao || '');
+  
+  const [history, setHistory] = useState<ProductionEntry[]>(product.productionHistory || [
+    { date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }
+  ]);
 
-  const valorTotalCustoProducao = React.useMemo(() => {
-    const custo = parseFloat(custoUnitario) || 0;
-    const qtdProv = parseInt(qtdProduzida) || 0;
-    const qtdRepr = parseInt(qtdReprogramada) || 0;
-    const finalQtd = qtdRepr > 0 ? qtdRepr : qtdProv;
-    return finalQtd * custo;
-  }, [custoUnitario, qtdProduzida, qtdReprogramada]);
+  const totals = React.useMemo(() => {
+    const totalCostValue = history.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
+    const totalQuantity = history.reduce((sum, entry) => sum + entry.quantity, 0);
+    const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
+    return { totalCostValue, totalQuantity, avgUnitCost };
+  }, [history]);
 
   useEffect(() => {
     if (open) {
@@ -63,13 +67,39 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
       setLicenseId(product.licenseId || '');
       setLaunchYear(product.launchYear ? String(product.launchYear) : '');
       setEan(product.ean || '');
-      setCustoUnitario(String(product.custo_unitario || 0));
-      setQtdProduzida(String(product.quantidade_produzida || 0));
-      setDataProducao(product.data_producao || '');
-      setQtdReprogramada(String(product.quantidade_reprogramada || 0));
-      setDataReprogramacao(product.data_reprogramacao || '');
+      setHistory(product.productionHistory && product.productionHistory.length > 0 
+        ? product.productionHistory 
+        : [{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }]
+      );
     }
   }, [open, product]);
+
+  const addReprogramming = () => {
+    setHistory([...history, { 
+      date: new Date().toISOString().split('T')[0], 
+      unitCost: 0, 
+      quantity: 0, 
+      totalValue: 0, 
+      type: 'reprogramming' 
+    }]);
+  };
+
+  const removeEntry = (index: number) => {
+    if (index === 0) return; // Cannot remove initial production
+    setHistory(history.filter((_, i) => i !== index));
+  };
+
+  const updateEntry = (index: number, field: keyof ProductionEntry, value: any) => {
+    const newHistory = [...history];
+    const entry = { ...newHistory[index], [field]: value };
+    
+    if (field === 'unitCost' || field === 'quantity') {
+      entry.totalValue = Number(entry.unitCost) * Number(entry.quantity);
+    }
+    
+    newHistory[index] = entry;
+    setHistory(newHistory);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,12 +113,10 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
         licenseId: licenseId === 'none' ? null : licenseId,
         launchYear: launchYear ? Number(launchYear) : null,
         ean,
-        custo_unitario: parseFloat(custoUnitario) || 0,
-        quantidade_produzida: parseInt(qtdProduzida) || 0,
-        data_producao: dataProducao || null,
-        quantidade_reprogramada: parseInt(qtdReprogramada) || 0,
-        data_reprogramacao: dataReprogramacao || null,
-        valor_total_custo_producao: valorTotalCustoProducao
+        productionHistory: history,
+        avgUnitCost: totals.avgUnitCost,
+        totalCostValue: totals.totalCostValue,
+        totalQuantityProduced: totals.totalQuantity
       });
       toast.success('Produto atualizado com sucesso!');
       setOpen(false);
@@ -104,10 +132,10 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
           <Edit2 size={16} />
         </button>
       } />
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-5xl overflow-y-auto max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>Editar Produto</DialogTitle>
-          <DialogDescription>Atualize os dados do produto.</DialogDescription>
+          <DialogDescription>Atualize os dados e o histórico de produção do produto.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="grid grid-cols-2 gap-4">
@@ -157,8 +185,8 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
             </div>
           </div>
 
-          <div className="grid grid-cols-6 gap-4 mt-4">
-            <div className="space-y-2 col-span-2">
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            <div className="space-y-2">
               <Label>Categoria</Label>
               <Select onValueChange={setCategoryId} value={categoryId || 'none'}>
                 <SelectTrigger>
@@ -174,80 +202,100 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2">
               <Label>Ano de Lançamento</Label>
               <Input type="number" value={launchYear} onChange={e => setLaunchYear(e.target.value)} placeholder="Ex: 2024" />
             </div>
-            <div className="space-y-2 col-span-2">
-              <Label>EAN (Código de Barras)</Label>
-              <Input value={ean} onChange={e => setEan(e.target.value)} placeholder="Ex: 7891234567890" />
+            <div className="space-y-2">
+              <Label>EAN</Label>
+              <Input value={ean} onChange={e => setEan(e.target.value)} placeholder="Ex: 789123..." />
             </div>
           </div>
 
           <div className="border-t border-slate-100 my-4 pt-4">
-            <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-               <Database size={16} className="text-blue-600" /> Custos e Produção
-            </h4>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Custo Unitário (R$)</Label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  min="0"
-                  value={custoUnitario} 
-                  onChange={(e) => setCustoUnitario(Math.max(0, parseFloat(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Valor Total Custo</Label>
-                <div className="h-9 flex items-center px-3 bg-slate-50 border border-slate-200 rounded-md font-semibold text-blue-700 text-sm">
-                  {valorTotalCustoProducao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                 <Database size={16} className="text-blue-600" /> Histórico de Produção e Custos
+              </h4>
+              <div className="flex gap-4">
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Custo Médio</p>
+                  <p className="text-sm font-bold text-blue-600">{totals.avgUnitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Total</p>
+                  <p className="text-sm font-bold text-slate-900">{totals.totalCostValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <div className="space-y-2">
-                <Label>Qtd Produzida</Label>
-                <Input 
-                  type="number" 
-                  min="0"
-                  value={qtdProduzida} 
-                  onChange={(e) => setQtdProduzida(Math.max(0, parseInt(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Data Produção</Label>
-                <Input 
-                  type="date" 
-                  value={dataProducao} 
-                  onChange={(e) => setDataProducao(e.target.value)} 
-                  className="h-9"
-                />
-              </div>
-            </div>
+            <div className="space-y-3">
+              {history.map((entry, index) => (
+                <div key={index} className={cn(
+                  "p-3 rounded-lg border relative group",
+                  index === 0 ? "bg-blue-50/30 border-blue-100" : "bg-slate-50/30 border-slate-100"
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-tight text-slate-400">
+                      {index === 0 ? 'Produção Inicial' : `Reprogramação #${index}`}
+                    </span>
+                    {index > 0 && (
+                      <button 
+                        type="button" 
+                        onClick={() => removeEntry(index)}
+                        className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all font-medium text-xs"
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Data</Label>
+                      <Input 
+                        type="date" 
+                        value={entry.date} 
+                        onChange={(e) => updateEntry(index, 'date', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Custo Unitário</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.unitCost} 
+                        onChange={(e) => updateEntry(index, 'unitCost', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Quantidade</Label>
+                      <Input 
+                        type="number" 
+                        value={entry.quantity} 
+                        onChange={(e) => updateEntry(index, 'quantity', parseInt(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Valor Total</Label>
+                      <div className="h-8 flex items-center px-2 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700">
+                        {(entry.unitCost * entry.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
 
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <div className="space-y-2">
-                <Label>Qtd Reprogramada</Label>
-                <Input 
-                  type="number" 
-                  min="0"
-                  value={qtdReprogramada} 
-                  onChange={(e) => setQtdReprogramada(Math.max(0, parseInt(e.target.value) || 0).toString())} 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Data Reprogramação</Label>
-                <Input 
-                  type="date" 
-                  value={dataReprogramacao} 
-                  onChange={(e) => setDataReprogramacao(e.target.value)} 
-                  className="h-9"
-                />
-              </div>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={addReprogramming}
+                className="w-full border-dashed border-slate-300 text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 text-xs h-8"
+              >
+                + Adicionar Reprogramação
+              </Button>
             </div>
           </div>
 
@@ -260,3 +308,4 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
     </Dialog>
   );
 }
+
