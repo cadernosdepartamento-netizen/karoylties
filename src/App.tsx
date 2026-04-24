@@ -6045,6 +6045,14 @@ function DashboardView({
     sortOptions(Array.from(new Set(reports.map((r: any) => r.year.toString()))).map(y => ({ label: y, value: y }))),
   [reports]);
 
+  const productLaunchYears = React.useMemo(() => 
+    sortOptions(Array.from(new Set(products
+      .map((p: any) => p.launchYear)
+      .filter((y): y is number => typeof y === 'number')
+      .map((y: number) => y.toString())
+    )).map(y => ({ label: y, value: y }))),
+  [products]);
+
   const valueTypes = [
     { label: 'Quantidades', value: 'quantidade' },
     { label: 'Faturamento Bruto', value: 'faturamento_bruto' },
@@ -6390,7 +6398,7 @@ function DashboardView({
               <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Ano de lançamento</Label>
               <MultiSelectDropdown
                 className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
-                options={availableYears}
+                options={productLaunchYears}
                 selectedValues={filterLaunchYears}
                 onChange={setFilterLaunchYears}
                 placeholder="Todos"
@@ -6528,7 +6536,7 @@ function DashboardView({
               <Label className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">Ano</Label>
               <MultiSelectDropdown
                 className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200"
-                options={availableYears}
+                options={productLaunchYears}
                 selectedValues={filterLaunchYears}
                 onChange={setFilterLaunchYears}
                 placeholder="Todos"
@@ -7836,7 +7844,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
           </div>
           <div className="rounded-md border border-slate-200 overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <thead className="bg-slate-50 text-slate-500 font-normal border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
                   <th className="px-4 py-3 w-4">
                     <input 
@@ -7852,38 +7860,38 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                   {viewMode === 'grouped' ? (
                     <>
                       <SortableHeader label="Mês/Ano" sortKey="dateSort" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
-                      <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
+                      <th className="px-4 py-3 w-16 text-center bg-slate-50 font-normal">Imagem</th>
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
-                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 text-right">Taxa dólar</th>}
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 font-normal text-right">Taxa dólar</th>}
                       <SortableHeader label="Valor Total" sortKey="totalValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxes" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
-                      <SortableHeader label="Total Líquido" sortKey="netValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right font-medium" />
+                      <SortableHeader label="Total Líquido" sortKey="netValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       {activeTab === 'sales_fob' && (
                         <>
-                          <th className="px-4 py-3">Invoice</th>
-                          <th className="px-4 py-3">Fabricante</th>
+                          <th className="px-4 py-3 font-normal">Invoice</th>
+                          <th className="px-4 py-3 font-normal">Fabricante</th>
                         </>
                       )}
-                      <th className="px-4 py-3 text-center">Registros</th>
+                      <th className="px-4 py-3 text-center font-normal">Registros</th>
                     </>
                   ) : (
                     <>
                       <SortableHeader label="Data" sortKey="date" currentSort={individualSortConfig} onSort={requestIndividualSort} />
-                      <th className="px-4 py-3 w-16 text-center bg-slate-50">Imagem</th>
+                      <th className="px-4 py-3 w-16 text-center bg-slate-50 font-normal">Imagem</th>
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={individualSortConfig} onSort={requestIndividualSort} />
-                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 text-right">Taxa dólar</th>}
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 font-normal text-right">Taxa dólar</th>}
                       <SortableHeader label="Valor Unitário" sortKey="unitPriceField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Valor Total" sortKey="totalValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxesField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
-                      <SortableHeader label="Total Líquido" sortKey="netValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right font-medium" />
+                      <SortableHeader label="Total Líquido" sortKey="netValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       {activeTab === 'sales_fob' && (
                         <>
-                          <th className="px-4 py-3">Invoice</th>
-                          <th className="px-4 py-3">Fabricante</th>
+                          <th className="px-4 py-3 font-normal">Invoice</th>
+                          <th className="px-4 py-3 font-normal">Fabricante</th>
                         </>
                       )}
                     </>

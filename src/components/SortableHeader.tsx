@@ -30,7 +30,7 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
       onClick={() => onSort(sortKey)}
     >
       <div className="flex items-center justify-between gap-1">
-        <span className="font-normal text-[10px] leading-tight whitespace-normal uppercase tracking-wider">{label}</span>
+        <span className="font-normal text-[11px] leading-tight whitespace-normal uppercase tracking-wider">{label}</span>
         <div className={cn(
           "transition-all duration-200 shrink-0",
           isActive ? "opacity-100 scale-100" : "opacity-20 group-hover:opacity-50"
