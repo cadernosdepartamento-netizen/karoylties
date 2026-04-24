@@ -29,20 +29,20 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
       )}
       onClick={() => onSort(sortKey)}
     >
-      <div className="flex items-center gap-1.5">
-        <span className="font-bold text-inherit">{label}</span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="font-normal text-[10px] leading-tight whitespace-normal uppercase tracking-wider">{label}</span>
         <div className={cn(
-          "transition-all duration-200",
-          isActive ? "opacity-100 scale-110" : "opacity-20 group-hover:opacity-50"
+          "transition-all duration-200 shrink-0",
+          isActive ? "opacity-100 scale-100" : "opacity-20 group-hover:opacity-50"
         )}>
           {isActive ? (
             currentSort.direction === 'asc' ? (
-              <ArrowUp size={14} className="stroke-[3px]" />
+              <ArrowUp size={10} className="stroke-[2px]" />
             ) : (
-              <ArrowDown size={14} className="stroke-[3px]" />
+              <ArrowDown size={10} className="stroke-[2px]" />
             )
           ) : (
-            <ArrowUpDown size={14} />
+            <ArrowUpDown size={10} />
           )}
         </div>
       </div>

@@ -16,9 +16,17 @@ interface Line { id: string; nomelinha: string; licenseId: string; }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface ProductionEntry {
   date: string;
+  invoiceNumber?: string;
   unitCost: number;
   quantity: number;
   totalValue: number;
+  ipi?: number;
+  icms?: number;
+  icmsst?: number;
+  cofins?: number;
+  pis?: number;
+  totalTaxes?: number;
+  netTotalCost?: number;
   type: 'initial' | 'reprogramming';
 }
 
@@ -30,6 +38,8 @@ interface Product {
   avgUnitCost?: number;
   totalCostValue?: number;
   totalQuantityProduced?: number;
+  totalTaxesGlobal?: number;
+  netTotalGlobal?: number;
   [key: string]: any;
 }
 
@@ -73,24 +83,29 @@ export function BatchEditProductsDialog({ selectedProductIds, products, lines, c
         if (custoUnitario || dataProducao) {
           const currentHistory: ProductionEntry[] = product.productionHistory && product.productionHistory.length > 0 
             ? [...product.productionHistory] 
-            : [{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }];
+            : [{ date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, type: 'initial' }];
           
           const firstEntry = { ...currentHistory[0] };
           if (custoUnitario) firstEntry.unitCost = parseFloat(custoUnitario);
           if (dataProducao) firstEntry.date = dataProducao;
           firstEntry.totalValue = firstEntry.unitCost * firstEntry.quantity;
-          
+          firstEntry.netTotalCost = firstEntry.totalValue - (firstEntry.totalTaxes || 0);
+
           currentHistory[0] = firstEntry;
           updates.productionHistory = currentHistory;
 
           // Recalculate totals
-          const totalCostValue = currentHistory.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
+          const totalCostValue = currentHistory.reduce((sum, entry) => sum + (entry.totalValue || 0), 0);
           const totalQuantity = currentHistory.reduce((sum, entry) => sum + entry.quantity, 0);
           const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
+          const totalTaxesGlobal = currentHistory.reduce((sum, entry) => sum + (entry.totalTaxes || 0), 0);
+          const netTotalGlobal = currentHistory.reduce((sum, entry) => sum + (entry.netTotalCost || 0), 0);
 
           updates.totalCostValue = totalCostValue;
           updates.totalQuantityProduced = totalQuantity;
           updates.avgUnitCost = avgUnitCost;
+          updates.totalTaxesGlobal = totalTaxesGlobal;
+          updates.netTotalGlobal = netTotalGlobal;
         }
 
         await updateDoc(doc(db, 'products', id), updates);

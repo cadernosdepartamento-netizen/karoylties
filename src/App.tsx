@@ -83,6 +83,7 @@ import { DeleteProductDialog } from './components/DeleteProductDialog';
 import { BatchDeleteProductsDialog } from './components/BatchDeleteProductsDialog';
 import { MultiSelectDropdown } from './components/MultiSelectDropdown';
 import { ImportSalesDialog } from './components/ImportSalesDialog';
+import { ClearProductsDialog } from './components/ClearProductsDialog';
 import { SearchableSelect } from './components/SearchableSelect';
 import { useSortableData } from './hooks/useSortableData';
 import { SortableHeader } from './components/SortableHeader';
@@ -145,9 +146,17 @@ interface Line {
 }
 interface ProductionEntry {
   date: string;
+  invoiceNumber?: string;
   unitCost: number;
   quantity: number;
   totalValue: number;
+  ipi?: number;
+  icms?: number;
+  icmsst?: number;
+  cofins?: number;
+  pis?: number;
+  totalTaxes?: number;
+  netTotalCost?: number;
   type: 'initial' | 'reprogramming';
 }
 
@@ -165,6 +174,8 @@ interface Product {
   avgUnitCost?: number;
   totalCostValue?: number;
   totalQuantityProduced?: number;
+  totalTaxesGlobal?: number;
+  netTotalGlobal?: number;
   custo_unitario?: number;
   quantidade_produzida?: number;
   quantidade_reprogramada?: number;
@@ -239,6 +250,9 @@ interface RoyaltyReport {
   licenseId?: string;
   lineId: string;
   productId?: string;
+  productSku?: string;
+  sku?: string;
+  codBarras?: string;
   month: number;
   year: number;
   quantity: number;
@@ -1048,6 +1062,7 @@ function MainApp() {
               {activeTab === 'products' && isAdmin && (
                 <div className="flex items-center gap-2">
                   <ImportProductsDialog lines={lines} categories={productCategories} licenses={licenses} />
+                  <ClearProductsDialog />
                   <AddProductDialog lines={lines} categories={productCategories} licenses={licenses} />
                 </div>
               )}
@@ -1714,13 +1729,22 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
     "Nome",
     "Categoria",
     "Ano",
-    "EAN"
+    "EAN",
+    "Data",
+    "NF",
+    "Qtd",
+    "Custo",
+    "IPI",
+    "ICMS",
+    "ICMS ST",
+    "COFINS",
+    "PIS"
   ];
 
   const downloadTemplate = () => {
     const wsData = [
       templateColumns,
-      [licenses[0]?.nomelicenciador || "Exemplo Licenciador", lines[0]?.nomelinha || "Exemplo Linha", "SKU123", "Exemplo Produto", categories[0]?.nomeCategoriaProduto || "Exemplo Categoria", "2024", "7891234567890"]
+      [licenses[0]?.nomelicenciador || "Exemplo Licenciador", lines[0]?.nomelinha || "Exemplo Linha", "SKU123", "Exemplo Produto", categories[0]?.nomeCategoriaProduto || "Exemplo Categoria", "2024", "7891234567890", "2024-05-15", "123456", "100", "15.5", "0.50", "1.20", "0", "0.30", "0.15"]
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
@@ -1735,6 +1759,12 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
       ["5. Categoria: Nome de uma categoria já cadastrada no sistema."],
       ["6. Ano: Ano de lançamento (opcional)."],
       ["7. EAN: Código de barras EAN (opcional)."],
+      ["8. Data: Data da produção (ex: 2024-05-15). (opcional)"],
+      ["9. NF: Nota Fiscal da produção. (opcional)"],
+      ["10. Qtd: Quantidade produzida nesta entrada (opcional)."],
+      ["11. Custo: Custo unitário nesta entrada (opcional)."],
+      ["12. IPI, ICMS, ICMS ST, COFINS, PIS: Valores numéricos de impostos para a entrada (Opcional)."],
+      ["Nota: Se houver mais de uma linha para o mesmo Código+EAN+Nome, as entradas de produção serão agrupadas no histórico do mesmo produto."]
     ];
     const instWs = XLSX.utils.aoa_to_sheet(instData);
     XLSX.utils.book_append_sheet(wb, instWs, "Instruções");
@@ -1771,70 +1801,171 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
 
         let importedCount = 0;
         let skippedCount = 0;
-        const total = jsonData.length;
+        
+        // Group data by product
+        const groupedProducts = new Map<string, {
+          base: any,
+          history: any[]
+        }>();
+
+        // Helper to parse dates from Excel (including numeric formats)
+        const parseExcelDate = (val: any) => {
+          if (!val) return "";
+          if (val instanceof Date) return val.toISOString().split('T')[0];
+          // If it's a number (Excel date), convert it
+          if (typeof val === 'number') {
+            const date = XLSX.SSF.parse_date_code(val);
+            const y = date.y;
+            const m = String(date.m).padStart(2, '0');
+            const d = String(date.d).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          }
+          // If it's a string, try to clean it
+          return String(val).trim();
+        };
+
+        for (const row of jsonData) {
+          const getVal = (keys: string[]) => {
+            const foundKey = Object.keys(row).find(k => 
+              keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
+            );
+            return foundKey ? row[foundKey] : undefined;
+          };
+
+          const licensorName = String(getVal(["Licenciador", "Licensing"]) || "").trim();
+          const lineName = String(getVal(["Linha", "Marca", "Line"]) || "").trim();
+          const sku = String(getVal(["Código", "SKU", "Codigo", "Ref"]) || "").trim();
+          const productName = String(getVal(["Nome", "Produto", "Descricão", "Product"]) || "").trim();
+          const categoryName = String(getVal(["Categoria", "Família", "Category"]) || "").trim();
+          const yearRaw = getVal(["Ano", "Ano de lançamento", "Year"]);
+          const ean = String(getVal(["EAN", "Código de barras", "Barcode"]) || "").trim();
+
+          // Production & Tax Data
+          const rawDate = getVal(["Data", "Data de produção", "Data Produção", "Emissão", "Produzido em", "Date"]);
+          const dateStr = parseExcelDate(rawDate);
+          const invoiceNumber = String(getVal(["NF", "Nota Fiscal", "Num NF", "Invoice"]) || "").trim();
+          const quantity = Number(getVal(["Qtd", "Quantidade"]) || 0);
+          const unitCost = Number(getVal(["Custo", "Custo Unitário"]) || 0);
+          
+          const ipi = Number(getVal(["IPI", "Vl IPI", "Valor IPI"]) || 0);
+          const icms = Number(getVal(["ICMS", "Vl ICMS"]) || 0);
+          const icmsst = Number(getVal(["ICMS ST", "ST", "ICMS ST"]) || 0);
+          const cofins = Number(getVal(["COFINS", "Vl COFINS"]) || 0);
+          const pis = Number(getVal(["PIS", "Vl PIS"]) || 0);
+
+          if (!lineName || !productName) {
+            skippedCount++;
+            continue;
+          }
+
+          let licenseId = '';
+          if (licensorName) {
+            const license = licenses.find(l => 
+              String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
+              String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
+            );
+            if (license) licenseId = license.id;
+          }
+
+          const line = lines.find(l => 
+            String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
+            (!licenseId || l.licenseId === licenseId)
+          );
+
+          if (!line) {
+            skippedCount++;
+            continue;
+          }
+
+          let categoryId = '';
+          if (categoryName) {
+            const category = categories.find(c => String(c.nomeCategoriaProduto || "").trim().toLowerCase() === categoryName.toLowerCase());
+            if (category) categoryId = category.id;
+          }
+
+          const launchYear = yearRaw ? Number(yearRaw) : null;
+          
+          // Identifier is SKU + EAN to be safe, but fallback to name
+          const identifier = `${sku}-${ean}-${productName}`;
+
+          const totalValue = Number(unitCost) * Number(quantity);
+          const totalTaxes = ipi + icms + icmsst + cofins + pis;
+          const netTotalCost = totalValue - totalTaxes;
+
+          const historyEntry = {
+            date: dateStr || new Date().toISOString().split('T')[0],
+            invoiceNumber,
+            quantity,
+            unitCost,
+            totalValue,
+            ipi,
+            icms,
+            icmsst,
+            cofins,
+            pis,
+            totalTaxes,
+            netTotalCost
+          };
+
+          if (!groupedProducts.has(identifier)) {
+            groupedProducts.set(identifier, {
+              base: {
+                name: productName.toString(),
+                lineId: line.id,
+                sku: sku.toString(),
+                categoryId,
+                licenseId: licenseId || line.licenseId,
+                launchYear: isNaN(launchYear as number) ? null : launchYear,
+                ean: ean.toString()
+              },
+              history: []
+            });
+          }
+          
+          if (dateStr || quantity > 0 || unitCost > 0) {
+            groupedProducts.get(identifier)!.history.push(historyEntry);
+          }
+        }
+
+        const groupedArray = Array.from(groupedProducts.values());
+        const total = groupedArray.length;
 
         const batchSize = 100;
-        for (let i = 0; i < jsonData.length; i += batchSize) {
-          const chunk = jsonData.slice(i, i + batchSize);
+        for (let i = 0; i < groupedArray.length; i += batchSize) {
+          const chunk = groupedArray.slice(i, i + batchSize);
           const batch = writeBatch(db);
 
-          for (const row of chunk) {
-            const getVal = (keys: string[]) => {
-              const foundKey = Object.keys(row).find(k => 
-                keys.some(key => k.trim().toLowerCase() === key.toLowerCase())
-              );
-              return foundKey ? row[foundKey] : undefined;
-            };
-
-            const licensorName = String(getVal(["Licenciador"]) || "").trim();
-            const lineName = String(getVal(["Linha"]) || "").trim();
-            const sku = String(getVal(["Código", "SKU"]) || "").trim();
-            const productName = String(getVal(["Nome", "Produto"]) || "").trim();
-            const categoryName = String(getVal(["Categoria"]) || "").trim();
-            const yearRaw = getVal(["Ano", "Ano de lançamento"]);
-            const ean = String(getVal(["EAN", "Código de barras"]) || "").trim();
-
-            if (!lineName || !productName) {
-              skippedCount++;
-              continue;
-            }
-
-            let licenseId = '';
-            if (licensorName) {
-              const license = licenses.find(l => 
-                String(l.nomelicenciador || "").trim().toLowerCase() === licensorName.toLowerCase() ||
-                String(l.nomejurlicenciador || "").trim().toLowerCase() === licensorName.toLowerCase()
-              );
-              if (license) licenseId = license.id;
-            }
-
-            const line = lines.find(l => 
-              String(l.nomelinha || "").trim().toLowerCase() === lineName.toLowerCase() &&
-              (!licenseId || l.licenseId === licenseId)
-            );
-
-            if (!line) {
-              skippedCount++;
-              continue;
-            }
-
-            let categoryId = '';
-            if (categoryName) {
-              const category = categories.find(c => String(c.nomeCategoriaProduto || "").trim().toLowerCase() === categoryName.toLowerCase());
-              if (category) categoryId = category.id;
-            }
-
-            const launchYear = yearRaw ? Number(yearRaw) : null;
-
+          for (const item of chunk) {
             const newDocRef = doc(collection(db, 'products'));
+            
+            // Format history
+            let productionHistory = item.history.map((entry, idx) => ({
+              ...entry,
+              type: idx === 0 ? 'initial' : 'reprogramming'
+            }));
+
+            if (productionHistory.length === 0) {
+              productionHistory = [{
+                 date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, 
+                 ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, 
+                 type: 'initial'
+              }];
+            }
+
+            const totalCostValue = productionHistory.reduce((sum, entry) => sum + (entry.totalValue || 0), 0);
+            const totalQuantityProduced = productionHistory.reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+            const avgUnitCost = totalQuantityProduced > 0 ? totalCostValue / totalQuantityProduced : 0;
+            const totalTaxesGlobal = productionHistory.reduce((sum, entry) => sum + (entry.totalTaxes || 0), 0);
+            const netTotalGlobal = productionHistory.reduce((sum, entry) => sum + (entry.netTotalCost || 0), 0);
+
             batch.set(newDocRef, {
-              name: productName.toString(),
-              lineId: line.id,
-              sku: sku.toString(),
-              categoryId,
-              licenseId: licenseId || line.licenseId,
-              launchYear: isNaN(launchYear as number) ? null : launchYear,
-              ean: ean.toString(),
+              ...item.base,
+              productionHistory,
+              avgUnitCost,
+              totalCostValue,
+              totalQuantityProduced,
+              totalTaxesGlobal,
+              netTotalGlobal,
               createdAt: serverTimestamp()
             });
             importedCount++;
@@ -1843,7 +1974,7 @@ function ImportProductsDialog({ lines, categories, licenses }: { lines: Line[], 
           setImportProgress(Math.min(Math.round(((i + chunk.length) / total) * 100), 100));
         }
 
-        toast.success(`${importedCount} produtos importados com sucesso! ${skippedCount > 0 ? `(${skippedCount} puladas)` : ''}`);
+        toast.success(`${importedCount} produtos importados com sucesso! ${skippedCount > 0 ? `(${skippedCount} linhas ignoradas)` : ''}`);
         setOpen(false);
         setFile(null);
       } catch (err) {
@@ -1914,14 +2045,16 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const [launchYear, setLaunchYear] = useState('');
   const [ean, setEan] = useState('');
   const [history, setHistory] = useState<ProductionEntry[]>([
-    { date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }
+    { date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, type: 'initial' }
   ]);
 
   const totals = React.useMemo(() => {
     const totalCostValue = history.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
     const totalQuantity = history.reduce((sum, entry) => sum + entry.quantity, 0);
     const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
-    return { totalCostValue, totalQuantity, avgUnitCost };
+    const totalTaxesGlobal = history.reduce((sum, entry) => sum + (entry.totalTaxes || 0), 0);
+    const netTotalGlobal = history.reduce((sum, entry) => sum + (entry.netTotalCost || 0), 0);
+    return { totalCostValue, totalQuantity, avgUnitCost, totalTaxesGlobal, netTotalGlobal };
   }, [history]);
 
   const handleLineChange = (id: string) => {
@@ -1937,9 +2070,11 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const addReprogramming = () => {
     setHistory([...history, { 
       date: new Date().toISOString().split('T')[0], 
+      invoiceNumber: '',
       unitCost: 0, 
       quantity: 0, 
       totalValue: 0, 
+      ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0,
       type: 'reprogramming' 
     }]);
   };
@@ -1952,9 +2087,26 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const updateEntry = (index: number, field: keyof ProductionEntry, value: any) => {
     const newHistory = [...history];
     const entry = { ...newHistory[index], [field]: value };
-    if (field === 'unitCost' || field === 'quantity') {
-      entry.totalValue = Number(entry.unitCost) * Number(entry.quantity);
-    }
+    
+    // Auto-calculate total value
+    const unitCost = field === 'unitCost' ? Number(value) : Number(entry.unitCost || 0);
+    const quantity = field === 'quantity' ? Number(value) : Number(entry.quantity || 0);
+    const totalValue = unitCost * quantity;
+    entry.totalValue = totalValue;
+
+    // Taxes
+    const ipi = field === 'ipi' ? Number(value) : Number(entry.ipi || 0);
+    const icms = field === 'icms' ? Number(value) : Number(entry.icms || 0);
+    const icmsst = field === 'icmsst' ? Number(value) : Number(entry.icmsst || 0);
+    const cofins = field === 'cofins' ? Number(value) : Number(entry.cofins || 0);
+    const pis = field === 'pis' ? Number(value) : Number(entry.pis || 0);
+
+    const totalTaxes = ipi + icms + icmsst + cofins + pis;
+    entry.totalTaxes = totalTaxes;
+
+    // Formula easily adjustable: Value minus Taxes
+    entry.netTotalCost = totalValue - totalTaxes;
+
     newHistory[index] = entry;
     setHistory(newHistory);
   };
@@ -1962,6 +2114,15 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lineId) return toast.error('Selecione uma linha.');
+    
+    // Sanitize history: ensure date if quantity or cost exists
+    const sanitizedHistory = history.map(entry => {
+      if (!entry.date && (entry.quantity > 0 || entry.unitCost > 0)) {
+        return { ...entry, date: new Date().toISOString().split('T')[0] };
+      }
+      return entry;
+    });
+
     try {
       await addDoc(collection(db, 'products'), { 
         name, 
@@ -1971,10 +2132,12 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
         licenseId,
         launchYear: launchYear ? Number(launchYear) : null,
         ean,
-        productionHistory: history,
+        productionHistory: sanitizedHistory,
         avgUnitCost: totals.avgUnitCost,
         totalCostValue: totals.totalCostValue,
         totalQuantityProduced: totals.totalQuantity,
+        totalTaxesGlobal: totals.totalTaxesGlobal,
+        netTotalGlobal: totals.netTotalGlobal,
         createdAt: serverTimestamp() 
       });
       toast.success('Produto cadastrado com sucesso!');
@@ -1986,7 +2149,7 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
       setLicenseId('');
       setLaunchYear('');
       setEan('');
-      setHistory([{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }]);
+      setHistory([{ date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, type: 'initial' }]);
     } catch (err) {
       toast.error('Erro ao cadastrar produto.');
     }
@@ -2072,18 +2235,26 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
           </div>
 
           <div className="border-t border-slate-100 my-4 pt-4">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                  <Database size={16} className="text-blue-600" /> Custos e Produção
               </h4>
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap justify-end">
                 <div className="text-right">
                   <p className="text-[10px] text-slate-400 uppercase font-bold">Custo Médio</p>
                   <p className="text-sm font-bold text-blue-600">{totals.avgUnitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Total</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Total Impostos</p>
+                  <p className="text-sm font-bold text-red-600">{totals.totalTaxesGlobal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Bruto</p>
                   <p className="text-sm font-bold text-slate-900">{totals.totalCostValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Valor Líquido</p>
+                  <p className="text-sm font-bold text-green-600">{totals.netTotalGlobal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
               </div>
             </div>
@@ -2108,8 +2279,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="space-y-1">
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="space-y-1 col-span-12 sm:col-span-3">
                       <Label className="text-xs">Data</Label>
                       <Input 
                         type="date" 
@@ -2118,8 +2289,18 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Quantidade</Label>
+                    <div className="space-y-1 col-span-12 sm:col-span-3">
+                      <Label className="text-xs">NF</Label>
+                      <Input 
+                        type="text" 
+                        value={entry.invoiceNumber || ''} 
+                        onChange={(e) => updateEntry(index, 'invoiceNumber', e.target.value)}
+                        className="h-8 text-xs"
+                        placeholder="Nº da Nota Fiscal"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">Qtd</Label>
                       <Input 
                         type="number" 
                         value={entry.quantity} 
@@ -2127,8 +2308,8 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Custo Unitário</Label>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">Custo Unit.</Label>
                       <Input 
                         type="number" 
                         step="0.01"
@@ -2137,10 +2318,71 @@ function AddProductDialog({ lines, categories, licenses }: { lines: Line[], cate
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Valor Total</Label>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">Valor Bruto</Label>
                       <div className="h-8 flex items-center px-2 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700">
-                        {(entry.unitCost * entry.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {entry.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">IPI</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.ipi || 0} 
+                        onChange={(e) => updateEntry(index, 'ipi', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">ICMS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.icms || 0} 
+                        onChange={(e) => updateEntry(index, 'icms', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">ICMS ST</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.icmsst || 0} 
+                        onChange={(e) => updateEntry(index, 'icmsst', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">COFINS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.cofins || 0} 
+                        onChange={(e) => updateEntry(index, 'cofins', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">PIS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.pis || 0} 
+                        onChange={(e) => updateEntry(index, 'pis', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="col-span-12 grid grid-cols-2 gap-3 mt-1 p-2 bg-slate-100 rounded-md">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-slate-500">T. Impostos:</span>
+                        <span className="text-xs font-bold text-red-600">{(entry.totalTaxes || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-slate-500">Valor Líquido:</span>
+                        <span className="text-xs font-bold text-green-600">{(entry.netTotalCost || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                       </div>
                     </div>
                   </div>
@@ -4002,6 +4244,7 @@ function ImportReportsDialog({ contracts, lines, products, licenses }: { contrac
             contractId: contract.id,
             lineId: line.id,
             productId: product?.id || 'Geral',
+            productSku: sku,
             month,
             year,
             quantity,
@@ -5042,7 +5285,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
 
         const key = `${prodId}-${month}-${year}`;
         if (!groups.has(key)) {
-          groups.set(key, { quantity: 0, totalValue: 0, icms: 0, pis: 0, cofins: 0, ipi: 0, netValue: 0, lineId: saleLineId, prodId, month, year });
+          groups.set(key, { quantity: 0, totalValue: 0, icms: 0, pis: 0, cofins: 0, ipi: 0, netValue: 0, lineId: saleLineId, prodId, month, year, sku: saleSku });
         }
         const g = groups.get(key);
         const isFob = royaltyRateType === 'fob';
@@ -5094,6 +5337,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
           licenseId,
           lineId: g.lineId,
           productId: g.prodId === "unknown" ? "" : g.prodId,
+          productSku: g.sku || "",
           month: g.month,
           year: g.year,
           quantity: g.quantity,
@@ -5847,7 +6091,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       if (net === 0 && total > 0) {
         net = total - tax;
       }
-      const unitCost = Number(product.custo_unitario) || 0;
+      const unitCost = Number(product.avgUnitCost) || 0;
       const totalProdCost = quantity * unitCost;
 
       if (summaryValueType === 'quantidade') grid[y][m] += quantity;
@@ -5860,7 +6104,17 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
 
     // 3. Aggregate from ALL Reports (Royalties, CMF)
     reports.forEach((r: any) => {
-      const prodId = r.productId;
+      let prodId = r.productId;
+      // Fallback matching by SKU or Barcode if productId is not specific
+      if (!prodId || prodId === 'Geral' || prodId === 'unknown' || prodId === '') {
+        const lookupCode = String(r.productSku || r.sku || r.codBarras || "").trim();
+        if (lookupCode) {
+          // Find product by SKU to get its ID
+          const p = products.find((prod: any) => String(prod.sku || "").trim() === lookupCode);
+          if (p) prodId = p.id;
+        }
+      }
+
       if (!prodId) return;
 
       const product = validProductsById.get(prodId);
@@ -5872,7 +6126,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       initGrid(y, m);
 
       const royalty = Number(r.royaltyValue) || 0;
-      const cmf = Number(r.cmfValue) || 0;
+      const cmf = Number(r.cmfValue) || Number(r.cmf) || 0;
 
       if (summaryValueType === 'valor_royalties') grid[y][m] += royalty;
       else if (summaryValueType === 'valor_cmf') grid[y][m] += cmf;
@@ -5924,16 +6178,29 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
 
     // 2. Compute total royalties and CMF from reports per productId
     const reportsAggregated: Record<string, { quantity: number, royaltyValue: number, cmfValue: number }> = {};
+    const skuToIdMap = new Map();
+    products.forEach((p: any) => {
+      if (p.sku) skuToIdMap.set(String(p.sku).trim(), p.id);
+    });
+
     reports.forEach((r: any) => {
-      const prodId = r.productId;
-      if (!prodId) return;
+      let prodId = r.productId;
+      // Fallback matching by SKU or Barcode if productId is not specific
+      if (!prodId || prodId === 'Geral' || prodId === 'unknown' || prodId === '') {
+        const lookupCode = String(r.productSku || r.sku || r.codBarras || "").trim();
+        if (lookupCode) {
+          prodId = skuToIdMap.get(lookupCode) || prodId;
+        }
+      }
+
+      if (!prodId || prodId === 'Geral' || prodId === 'unknown' || prodId === '') return;
       
       if (!reportsAggregated[prodId]) {
         reportsAggregated[prodId] = { quantity: 0, royaltyValue: 0, cmfValue: 0 };
       }
       reportsAggregated[prodId].quantity += Number(r.quantity) || 0;
       reportsAggregated[prodId].royaltyValue += Number(r.royaltyValue) || 0;
-      reportsAggregated[prodId].cmfValue += Number(r.cmfValue) || 0;
+      reportsAggregated[prodId].cmfValue += Number(r.cmfValue) || Number(r.cmf) || 0;
     });
 
     // 3. Loop over products, filter them, and build the row
@@ -5965,9 +6232,12 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       const license = licenses.find((l: any) => l.id === p.licenseId);
       const line = lines.find((l: any) => l.id === p.lineId);
 
-      const unitCost = Number(p.custo_unitario) || 0;
-      const totalProductCost = salesData.quantity * unitCost; // Uses sales quantity
-      const realValue = salesData.netValue - totalProductCost - reportData.royaltyValue - reportData.cmfValue;
+      const unitCost = Number(p.avgUnitCost) || 0;
+      const unitTaxes = p.totalQuantityProduced > 0 ? (Number(p.totalTaxesGlobal) || 0) / p.totalQuantityProduced : 0;
+      
+      const totalProductCost = salesData.quantity * unitCost; 
+      const totalProductTaxes = salesData.quantity * unitTaxes;
+      const realValue = salesData.netValue - totalProductCost - totalProductTaxes - reportData.royaltyValue - reportData.cmfValue;
 
       map[pSku] = {
         id: p.id,
@@ -5982,10 +6252,11 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         netValue: salesData.netValue,
         taxes: salesData.taxes,
         totalProductCost: totalProductCost,
+        totalProductTaxes: totalProductTaxes,
         royaltyValue: reportData.royaltyValue,
         cmfValue: reportData.cmfValue,
         realValue: realValue,
-        marginPercentage: salesData.netValue > 0 ? (realValue / salesData.netValue) * 100 : 0
+        marginPercentage: salesData.totalValue > 0 ? (realValue / salesData.totalValue) * 100 : 0
       };
     });
     
@@ -6226,32 +6497,33 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded" /></th>
-                  <th className="px-3 py-4 w-16 font-normal">Imagem</th>
-                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-3 py-4 w-20 font-normal" />
-                  <SortableHeader label="Nome" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
+                  <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" /></th>
+                  <th className="px-3 py-4 w-16 font-normal">Img</th>
+                  <SortableHeader label="Cód." sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-3 py-4 w-20 font-normal" />
+                  <SortableHeader label="Produto" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
                   <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Faturamento Bruto</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Impostos</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Valor Líquido</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Custo Prod.</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Royalties</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">CMF</th>
-                  <SortableHeader label="Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right font-normal whitespace-nowrap" />
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Impostos Venda</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(=) Valor Líquido Venda</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Custo Prod.</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Impostos Prod.</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Royalties</th>
+                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) CMF</th>
+                  <SortableHeader label="(=) Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right font-normal whitespace-nowrap" />
                   <th className="px-6 py-4 text-right font-normal whitespace-nowrap">% Margem</th>
-                  <th className="px-6 py-4 text-center font-normal">Ações</th>
+                  <th className="px-4 py-4 text-center font-normal">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 bg-white">
                 {paginatedListing.map((row: any) => (
                   <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-6 py-4"><input type="checkbox" className="rounded" /></td>
+                    <td className="px-6 py-4"><input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" /></td>
                     <td className="px-3 py-4">
-                      <div className="w-10 h-10 bg-slate-50 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1">
+                      <div className="w-10 h-10 bg-white rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1 shadow-sm">
                         {row.imageUrl ? (
                           <img 
                             src={row.imageUrl} 
                             alt="" 
-                            className="max-w-full max-h-full object-contain mix-blend-multiply" 
+                            className="max-w-full max-h-full object-contain mix-blend-multiply transition-transform group-hover:scale-110" 
                             referrerPolicy="no-referrer"
                             onError={(e) => { 
                               e.currentTarget.src = 'https://placehold.co/100x100?text=S/I';
@@ -6263,20 +6535,28 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-4 text-slate-700 max-w-[100px] truncate" title={row.sku}>{row.sku}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-slate-700">
-                      {row.productName}
+                    <td className="px-3 py-4 text-slate-700 max-w-[100px] truncate font-mono text-[10px]" title={row.sku}>{row.sku}</td>
+                    <td className="px-6 py-4 text-slate-700">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate max-w-[200px]">{row.productName}</span>
+                        <span className="text-[10px] text-slate-400 capitalize">{row.categoryName} • {row.lineName}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.taxes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.netValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.totalProductCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.royaltyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.cmfValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">R$ {row.realValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="px-6 py-4 text-right text-slate-700 whitespace-nowrap">{row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td className="px-6 py-4 text-right font-medium text-slate-900 whitespace-nowrap">{row.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right text-red-500 whitespace-nowrap">{row.taxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-slate-900 whitespace-nowrap bg-slate-50/30">{row.netValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{row.totalProductCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{row.totalProductTaxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{row.royaltyValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{row.cmfValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right font-bold text-emerald-700 bg-emerald-50/20 whitespace-nowrap underline decoration-emerald-100 decoration-2 underline-offset-4">{row.realValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${row.marginPercentage > 30 ? 'bg-emerald-100 text-emerald-700' : row.marginPercentage > 15 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                        {row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
                           <Pencil size={14} />
                         </Button>
@@ -7795,7 +8075,16 @@ function ReportsView({ reports, contracts, lines, products, licenses, isAdmin }:
       yearsSet.add(r.year);
       monthsSet.add(r.month);
       
-      const p = products.find(prod => prod.id === r.productId);
+      let prodId = r.productId;
+      if (!prodId || prodId === 'Geral' || prodId === 'unknown') {
+        const lookupCode = String(r.productSku || r.sku || r.codBarras || "").trim();
+        if (lookupCode) {
+           const foundProd = products.find(p => String(p.sku || "").trim() === lookupCode);
+           if (foundProd) prodId = foundProd.id;
+        }
+      }
+
+      const p = products.find(prod => prod.id === prodId);
       if (p?.launchYear) {
         launchYearsSet.add(p.launchYear);
       }
@@ -10935,6 +11224,15 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
   const { items: sortedProducts, requestSort, sortConfig } = useSortableData(displayProducts, { key: 'sku', direction: 'asc' });
 
   const uniqueYears = sortOptions(Array.from(new Set(products.map(p => p.launchYear).filter(Boolean))));
+  
+  const totalsSummary = React.useMemo(() => {
+    return filteredProducts.reduce((acc, p) => ({
+      qty: acc.qty + (p.totalQuantityProduced || 0),
+      taxes: acc.taxes + (p.totalTaxesGlobal || 0),
+      net: acc.net + (p.netTotalGlobal || 0),
+      cost: acc.cost + (p.totalCostValue || 0)
+    }), { qty: 0, taxes: 0, net: 0, cost: 0 });
+  }, [filteredProducts]);
 
   const prodSummaryData = React.useMemo(() => {
     const filtered = products.filter(p => {
@@ -11397,32 +11695,53 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Qtd Total Produzida</p>
+              <p className="text-sm font-bold text-slate-900 leading-tight">{totalsSummary.qty.toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total de Impostos</p>
+              <p className="text-sm font-bold text-red-600 leading-tight">{totalsSummary.taxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total Investimento</p>
+              <p className="text-sm font-bold text-slate-900 leading-tight">{totalsSummary.cost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-emerald-100 shadow-sm bg-emerald-50/10 flex flex-col justify-center h-16">
+              <p className="text-[9px] text-emerald-600 uppercase tracking-wider font-semibold mb-0.5">Valor Líquido Total</p>
+              <p className="text-sm font-bold text-emerald-700 leading-tight">{totalsSummary.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          </div>
+
           <div className="rounded-md border border-slate-200 overflow-x-auto max-h-[600px] overflow-y-auto">
-            <table className="w-full text-sm text-left min-w-[1200px]">
-              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0 z-10">
                 <tr>
                   {isAdmin && (
-                    <th className="px-4 py-3 w-12 text-center bg-slate-50">
+                    <th className="px-2 py-2 w-8 text-center bg-slate-50">
                       <input 
                         type="checkbox" 
                         checked={filteredProducts.length > 0 && selectedProductIds.length === filteredProducts.length}
                         onChange={toggleSelectAll}
-                        className="rounded border-slate-300"
+                        className="rounded border-slate-300 w-3 h-3"
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3 w-16 bg-slate-50">Imagem</th>
-                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Nome" sortKey="name" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Categoria" sortKey="categoryName" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="EAN" sortKey="ean" currentSort={sortConfig} onSort={requestSort} />
-                  <SortableHeader label="Custo Médio" sortKey="avgUnitCost" currentSort={sortConfig} onSort={requestSort} className="text-right" />
-                  <SortableHeader label="Qtd Total" sortKey="totalQuantityProduced" currentSort={sortConfig} onSort={requestSort} className="text-right" />
-                  <SortableHeader label="Inv. Total" sortKey="totalCostValue" currentSort={sortConfig} onSort={requestSort} className="text-right font-semibold bg-blue-50/30" />
-                  {isAdmin && <th className="px-4 py-3 text-right bg-slate-50">Ações</th>}
+                  <th className="px-2 py-2 min-w-[50px] bg-slate-50 font-normal text-[10px] uppercase tracking-wider">Img</th>
+                  <SortableHeader label="Código" sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[70px]" />
+                  <SortableHeader label="Nome" sortKey="name" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[150px]" />
+                  <SortableHeader label="Categoria" sortKey="categoryName" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[100px]" />
+                  <SortableHeader label="Linha" sortKey="lineName" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[100px]" />
+                  <SortableHeader label="Licenciador" sortKey="licenseName" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[100px]" />
+                  <SortableHeader label="Ano" sortKey="launchYear" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[50px]" />
+                  <SortableHeader label="EAN" sortKey="ean" currentSort={sortConfig} onSort={requestSort} className="px-2 py-2 min-w-[100px]" />
+                  <SortableHeader label="Custo Médio" sortKey="avgUnitCost" currentSort={sortConfig} onSort={requestSort} className="text-right px-2 py-2 min-w-[80px]" />
+                  <SortableHeader label="Qtd Total" sortKey="totalQuantityProduced" currentSort={sortConfig} onSort={requestSort} className="text-right px-2 py-2 min-w-[70px]" />
+                  <SortableHeader label="T. Impostos" sortKey="totalTaxesGlobal" currentSort={sortConfig} onSort={requestSort} className="text-right px-2 py-2 min-w-[80px]" />
+                  <SortableHeader label="Inv. Total" sortKey="totalCostValue" currentSort={sortConfig} onSort={requestSort} className="text-right px-2 py-2 min-w-[90px] bg-slate-50 border-x border-slate-100" />
+                  <SortableHeader label="Valor Líquido" sortKey="netTotalGlobal" currentSort={sortConfig} onSort={requestSort} className="text-right px-2 py-2 min-w-[90px] bg-emerald-50/20" />
+                  {isAdmin && <th className="px-2 py-2 text-right bg-slate-50 font-normal text-[10px] uppercase tracking-wider">Ações</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -11433,52 +11752,58 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                   const imageUrl = (product.sku && product.sku.trim()) ? `https://img.kalunga.com.br/FotosdeProdutos/${String(product.sku.trim()).padStart(6, '0')}.jpg` : null;
 
                   return (
-                    <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={product.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 text-slate-700">
                       {isAdmin && (
-                        <td className="px-4 py-2 text-center">
+                        <td className="px-2 py-1.5 text-center">
                           <input 
                             type="checkbox" 
                             checked={selectedProductIds.includes(product.id)}
                             onChange={() => toggleSelectProduct(product.id)}
-                            className="rounded border-slate-300"
+                            className="rounded border-slate-300 w-3 h-3"
                           />
                         </td>
                       )}
-                      <td className="px-4 py-2">
+                      <td className="px-2 py-1.5">
                         {imageUrl ? (
                           <img 
                             src={imageUrl} 
                             alt={product.name} 
-                            className="w-12 h-12 object-cover rounded border border-slate-200" 
+                            className="w-10 h-10 object-cover rounded border border-slate-200" 
                             referrerPolicy="no-referrer" 
                             onError={(e) => { 
-                              e.currentTarget.src = 'https://placehold.co/100x100?text=Sem+Imagem';
-                              e.currentTarget.onerror = null; // Prevent infinite loop if placeholder also fails
+                              e.currentTarget.src = 'https://placehold.co/100x100?text=S/I';
+                              e.currentTarget.onerror = null; 
                             }} 
                           />
                         ) : (
-                          <div className="w-12 h-12 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-xs text-slate-400">N/A</div>
+                          <div className="w-10 h-10 bg-slate-50 rounded border border-slate-200 flex items-center justify-center text-[9px] text-slate-400">N/A</div>
                         )}
                       </td>
-                      <td className="px-4 py-4 font-medium text-slate-900">{product.sku ? String(product.sku).padStart(6, '0') : '-'}</td>
-                      <td className="px-4 py-4 text-slate-900">{product.name}</td>
-                      <td className="px-4 py-4 text-slate-600">{category?.nomeCategoriaProduto || (product.categoryId ? `ID: ${product.categoryId.slice(0,5)}` : '-')}</td>
-                      <td className="px-4 py-4 text-slate-600">{line?.nomelinha || (product.lineId ? `ID: ${product.lineId.slice(0,5)}` : '-')}</td>
-                      <td className="px-4 py-4 text-slate-600">{license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (product.licenseId ? `ID: ${product.licenseId.slice(0,5)}` : '-'))}</td>
-                      <td className="px-4 py-4 text-slate-600">{product.launchYear || '-'}</td>
-                      <td className="px-4 py-4 text-slate-600">{product.ean || '-'}</td>
-                      <td className="px-4 py-4 text-right">
+                      <td className="px-2 py-1.5 font-normal whitespace-nowrap">{product.sku ? String(product.sku).padStart(6, '0') : '-'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{product.name}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-500">{category?.nomeCategoriaProduto || (product.categoryId ? `ID: ${product.categoryId.slice(0,5)}` : '-')}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-500">{line?.nomelinha || (product.lineId ? `ID: ${product.lineId.slice(0,5)}` : '-')}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-500 text-[10px]">{license?.nomelicenciador || (license?.id ? `ID: ${license.id.slice(0,5)}` : (product.licenseId ? `ID: ${product.licenseId.slice(0,5)}` : '-'))}</td>
+                      <td className="px-2 py-1.5 text-center text-slate-500">{product.launchYear || '-'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-slate-500">{product.ean || '-'}</td>
+                      <td className="px-2 py-1.5 text-right whitespace-nowrap">
                         {(product.avgUnitCost || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
-                      <td className="px-4 py-4 text-right text-slate-600">
+                      <td className="px-2 py-1.5 text-right whitespace-nowrap text-slate-500">
                         {(product.totalQuantityProduced || 0).toLocaleString('pt-BR')}
                       </td>
-                      <td className="px-4 py-4 text-right font-semibold text-blue-700 bg-blue-50/10">
+                      <td className="px-2 py-1.5 text-right whitespace-nowrap text-slate-700">
+                        {(product.totalTaxesGlobal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-normal text-slate-700 bg-slate-50/50 border-x border-slate-100 whitespace-nowrap">
                         {(product.totalCostValue || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
+                      <td className="px-2 py-1.5 text-right font-normal text-slate-800 bg-emerald-50/20 whitespace-nowrap">
+                        {(product.netTotalGlobal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
                       {isAdmin && (
-                        <td className="px-4 py-4 text-right">
-                          <div className="flex justify-end gap-1">
+                        <td className="px-2 py-1.5 text-right">
+                          <div className="flex justify-end gap-0.5">
                             <EditProductDialog 
                               product={product} 
                               lines={lines} 
@@ -11497,7 +11822,7 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 })}
                 {filteredProducts.length === 0 && (
                   <tr>
-                    <td colSpan={isAdmin ? 10 : 8} className="px-4 py-8 text-center text-slate-400">Nenhum produto encontrado.</td>
+                    <td colSpan={isAdmin ? 12 : 10} className="px-4 py-8 text-center text-slate-400">Nenhum produto encontrado.</td>
                   </tr>
                 )}
               </tbody>

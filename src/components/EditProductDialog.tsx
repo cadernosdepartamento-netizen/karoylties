@@ -16,9 +16,17 @@ interface Line { id: string; nomelinha: string; licenseId: string; }
 interface ProductCategory { id: string; nomeCategoriaProduto: string; }
 interface ProductionEntry {
   date: string;
+  invoiceNumber?: string;
   unitCost: number;
   quantity: number;
   totalValue: number;
+  ipi?: number;
+  icms?: number;
+  icmsst?: number;
+  cofins?: number;
+  pis?: number;
+  totalTaxes?: number;
+  netTotalCost?: number;
   type: 'initial' | 'reprogramming';
 }
 
@@ -35,6 +43,8 @@ interface Product {
   avgUnitCost?: number;
   totalCostValue?: number;
   totalQuantityProduced?: number;
+  totalTaxesGlobal?: number;
+  netTotalGlobal?: number;
 }
 
 export function EditProductDialog({ product, lines, categories, licenses }: { product: Product, lines: Line[], categories: ProductCategory[], licenses: License[] }) {
@@ -48,14 +58,16 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
   const [ean, setEan] = useState(product.ean || '');
   
   const [history, setHistory] = useState<ProductionEntry[]>(product.productionHistory || [
-    { date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }
+    { date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, type: 'initial' }
   ]);
 
   const totals = React.useMemo(() => {
     const totalCostValue = history.reduce((sum, entry) => sum + (entry.unitCost * entry.quantity), 0);
     const totalQuantity = history.reduce((sum, entry) => sum + entry.quantity, 0);
     const avgUnitCost = totalQuantity > 0 ? totalCostValue / totalQuantity : 0;
-    return { totalCostValue, totalQuantity, avgUnitCost };
+    const totalTaxesGlobal = history.reduce((sum, entry) => sum + (entry.totalTaxes || 0), 0);
+    const netTotalGlobal = history.reduce((sum, entry) => sum + (entry.netTotalCost || 0), 0);
+    return { totalCostValue, totalQuantity, avgUnitCost, totalTaxesGlobal, netTotalGlobal };
   }, [history]);
 
   useEffect(() => {
@@ -69,7 +81,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
       setEan(product.ean || '');
       setHistory(product.productionHistory && product.productionHistory.length > 0 
         ? product.productionHistory 
-        : [{ date: '', unitCost: 0, quantity: 0, totalValue: 0, type: 'initial' }]
+        : [{ date: '', invoiceNumber: '', unitCost: 0, quantity: 0, totalValue: 0, ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0, type: 'initial' }]
       );
     }
   }, [open, product]);
@@ -77,9 +89,11 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
   const addReprogramming = () => {
     setHistory([...history, { 
       date: new Date().toISOString().split('T')[0], 
+      invoiceNumber: '',
       unitCost: 0, 
       quantity: 0, 
       totalValue: 0, 
+      ipi: 0, icms: 0, icmsst: 0, cofins: 0, pis: 0, totalTaxes: 0, netTotalCost: 0,
       type: 'reprogramming' 
     }]);
   };
@@ -93,10 +107,25 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
     const newHistory = [...history];
     const entry = { ...newHistory[index], [field]: value };
     
-    if (field === 'unitCost' || field === 'quantity') {
-      entry.totalValue = Number(entry.unitCost) * Number(entry.quantity);
-    }
-    
+    // Auto-calculate total value
+    const unitCost = field === 'unitCost' ? Number(value) : Number(entry.unitCost || 0);
+    const quantity = field === 'quantity' ? Number(value) : Number(entry.quantity || 0);
+    const totalValue = unitCost * quantity;
+    entry.totalValue = totalValue;
+
+    // Taxes
+    const ipi = field === 'ipi' ? Number(value) : Number(entry.ipi || 0);
+    const icms = field === 'icms' ? Number(value) : Number(entry.icms || 0);
+    const icmsst = field === 'icmsst' ? Number(value) : Number(entry.icmsst || 0);
+    const cofins = field === 'cofins' ? Number(value) : Number(entry.cofins || 0);
+    const pis = field === 'pis' ? Number(value) : Number(entry.pis || 0);
+
+    const totalTaxes = ipi + icms + icmsst + cofins + pis;
+    entry.totalTaxes = totalTaxes;
+
+    // Formula easily adjustable: Value minus Taxes
+    entry.netTotalCost = totalValue - totalTaxes;
+
     newHistory[index] = entry;
     setHistory(newHistory);
   };
@@ -104,6 +133,14 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lineId) return toast.error('Selecione uma linha.');
+    
+    const sanitizedHistory = history.map(entry => {
+      if (!entry.date && (entry.quantity > 0 || entry.unitCost > 0)) {
+        return { ...entry, date: new Date().toISOString().split('T')[0] };
+      }
+      return entry;
+    });
+
     try {
       await updateDoc(doc(db, 'products', product.id), { 
         name, 
@@ -113,10 +150,12 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
         licenseId: licenseId === 'none' ? null : licenseId,
         launchYear: launchYear ? Number(launchYear) : null,
         ean,
-        productionHistory: history,
+        productionHistory: sanitizedHistory,
         avgUnitCost: totals.avgUnitCost,
         totalCostValue: totals.totalCostValue,
-        totalQuantityProduced: totals.totalQuantity
+        totalQuantityProduced: totals.totalQuantity,
+        totalTaxesGlobal: totals.totalTaxesGlobal,
+        netTotalGlobal: totals.netTotalGlobal
       });
       toast.success('Produto atualizado com sucesso!');
       setOpen(false);
@@ -217,14 +256,22 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
               <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                  <Database size={16} className="text-blue-600" /> Histórico de Produção e Custos
               </h4>
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap justify-end">
                 <div className="text-right">
                   <p className="text-[10px] text-slate-400 uppercase font-bold">Custo Médio</p>
                   <p className="text-sm font-bold text-blue-600">{totals.avgUnitCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Total</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Total Impostos</p>
+                  <p className="text-sm font-bold text-red-600">{(totals.totalTaxesGlobal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Investimento Bruto</p>
                   <p className="text-sm font-bold text-slate-900">{totals.totalCostValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">Valor Líquido</p>
+                  <p className="text-sm font-bold text-green-600">{(totals.netTotalGlobal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
               </div>
             </div>
@@ -249,8 +296,8 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="space-y-1">
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="space-y-1 col-span-12 sm:col-span-3">
                       <Label className="text-xs">Data</Label>
                       <Input 
                         type="date" 
@@ -259,7 +306,17 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 col-span-12 sm:col-span-3">
+                      <Label className="text-xs">NF</Label>
+                      <Input 
+                        type="text" 
+                        value={entry.invoiceNumber || ''} 
+                        onChange={(e) => updateEntry(index, 'invoiceNumber', e.target.value)}
+                        className="h-8 text-xs"
+                        placeholder="Nº da Nota Fiscal"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
                       <Label className="text-xs">Quantidade</Label>
                       <Input 
                         type="number" 
@@ -268,7 +325,7 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
                       <Label className="text-xs">Custo Unitário</Label>
                       <Input 
                         type="number" 
@@ -278,10 +335,71 @@ export function EditProductDialog({ product, lines, categories, licenses }: { pr
                         className="h-8 text-xs"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Valor Total</Label>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">Valor Bruto</Label>
                       <div className="h-8 flex items-center px-2 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700">
-                        {(entry.unitCost * entry.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {entry.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">IPI</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.ipi || 0} 
+                        onChange={(e) => updateEntry(index, 'ipi', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">ICMS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.icms || 0} 
+                        onChange={(e) => updateEntry(index, 'icms', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">ICMS ST</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.icmsst || 0} 
+                        onChange={(e) => updateEntry(index, 'icmsst', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">COFINS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.cofins || 0} 
+                        onChange={(e) => updateEntry(index, 'cofins', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-12 sm:col-span-2">
+                      <Label className="text-xs">PIS</Label>
+                      <Input 
+                        type="number" 
+                        step="0.01"
+                        value={entry.pis || 0} 
+                        onChange={(e) => updateEntry(index, 'pis', parseFloat(e.target.value) || 0)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="col-span-12 grid grid-cols-2 gap-3 mt-1 p-2 bg-slate-100 rounded-md">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-slate-500">T. Impostos:</span>
+                        <span className="text-xs font-bold text-red-600">{(entry.totalTaxes || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-slate-500">Valor Líquido:</span>
+                        <span className="text-xs font-bold text-green-600">{(entry.netTotalCost || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                       </div>
                     </div>
                   </div>

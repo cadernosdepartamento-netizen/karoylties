@@ -40,17 +40,27 @@
             "type": "object",
             "properties": {
               "date": { "type": "string", "format": "date" },
+              "invoiceNumber": { "type": "string" },
               "unitCost": { "type": "number" },
               "quantity": { "type": "number" },
               "totalValue": { "type": "number" },
+              "ipi": { "type": "number" },
+              "icms": { "type": "number" },
+              "icmsst": { "type": "number" },
+              "cofins": { "type": "number" },
+              "pis": { "type": "number" },
+              "totalTaxes": { "type": "number" },
+              "netTotalCost": { "type": "number" },
               "type": { "type": "string", "enum": ["initial", "reprogramming"] }
             }
           },
-          "description": "Histórico de produções e reprogramações"
+          "description": "Histórico de produções e reprogramações com dados fiscais detalhados"
         },
         "avgUnitCost": { "type": "number", "description": "Custo unitário médio (calculado)" },
         "totalCostValue": { "type": "number", "description": "Valor total investido na produção (calculado)" },
-        "totalQuantityProduced": { "type": "number", "description": "Quantidade total produzida (calculado)" }
+        "totalQuantityProduced": { "type": "number", "description": "Quantidade total produzida (calculado)" },
+        "totalTaxesGlobal": { "type": "number", "description": "Total de Impostos de todas as produções (calculado)" },
+        "netTotalGlobal": { "type": "number", "description": "Valor Líquido Total de todas as produções (calculado)" }
       },
       "required": ["lineId", "name"]
     },
