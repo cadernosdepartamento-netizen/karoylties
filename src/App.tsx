@@ -6204,8 +6204,30 @@ function DashboardView({
       salesAggregated[sku].taxes += taxesSum;
     });
 
+    // 2. Aggregate specialized sales for Royalty/CMF calculation
+    const netSalesAggregated: Record<string, number> = {};
+    const wholeSalesAggregated: Record<string, number> = {};
+    const fobSalesAggregated: Record<string, number> = {};
 
-    // 2. Compute total royalties and CMF from reports per productId
+    netSales.forEach((s: any) => {
+      const sku = String(s.sku || '').trim();
+      if (!sku) return;
+      netSalesAggregated[sku] = (netSalesAggregated[sku] || 0) + (Number(s.netValue) || 0);
+    });
+
+    wholeSales.forEach((s: any) => {
+      const sku = String(s.sku || '').trim();
+      if (!sku) return;
+      wholeSalesAggregated[sku] = (wholeSalesAggregated[sku] || 0) + (Number(s.netValue) || 0);
+    });
+
+    fobSales.forEach((s: any) => {
+      const sku = String(s.sku || '').trim();
+      if (!sku) return;
+      fobSalesAggregated[sku] = (fobSalesAggregated[sku] || 0) + (Number(s.valor_liquido_brl) || Number(s.netValue_brl) || 0);
+    });
+
+    // 3. Compute total royalties and CMF from reports per productId (Keep for fallback or info)
     const reportsAggregated: Record<string, { quantity: number, royaltyValue: number, cmfValue: number }> = {};
     const skuToIdMap = new Map();
     products.forEach((p: any) => {
@@ -6231,7 +6253,7 @@ function DashboardView({
       reportsAggregated[prodId].cmfValue += Number(r.cmfValue) || Number(r.cmf) || 0;
     });
 
-    // 3. Loop over products, filter them, and build the row
+    // 4. Loop over products, filter them, and build the row
     const map: Record<string, any> = {};
     
     products.forEach((p: any) => {
@@ -6251,22 +6273,35 @@ function DashboardView({
       const salesData = salesAggregated[pSku] || { quantity: 0, totalValue: 0, netValue: 0, taxes: 0 };
       const reportDataFromDB = reportsAggregated[p.id] || { quantity: 0, royaltyValue: 0, cmfValue: 0 };
 
-      if (salesData.totalValue === 0 && reportDataFromDB.royaltyValue === 0 && salesData.quantity === 0) {
+      // Values from specialized collections
+      const netSValue = netSalesAggregated[pSku] || 0;
+      const wholeSValue = wholeSalesAggregated[pSku] || 0;
+      const fobSValue = fobSalesAggregated[pSku] || 0;
+
+      if (salesData.totalValue === 0 && reportDataFromDB.royaltyValue === 0 && netSValue === 0 && wholeSValue === 0 && fobSValue === 0 && salesData.quantity === 0) {
         return; 
       }
 
       // Business Rule: Use percentage from contract or default
       const contract = contracts?.find((c: any) => c.licenseId === p.licenseId);
-      const royaltyRate = contract?.royaltyRate || DEFAULT_ROYALTY_RATE;
+      
+      // Royalties specific rates
+      const rRateNetSales = contract?.royaltyRateNetSales1 || DEFAULT_ROYALTY_RATE;
+      const rRateNetPurchases = contract?.royaltyRateNetPurchases || DEFAULT_ROYALTY_RATE;
+      const rRateFOB = contract?.royaltyRateFOB || DEFAULT_ROYALTY_RATE;
       const cmfRate = contract?.marketingFundRate || DEFAULT_CMF_RATE;
 
-      // Calculation of Royalties and CMF based on Net Sales Value
-      const calculatedRoyalty = salesData.netValue * royaltyRate;
-      const calculatedCmf = salesData.netValue * cmfRate;
+      // Calculation based on the specialized collections
+      const calculatedRoyalty = 
+        (netSValue * rRateNetSales) + 
+        (wholeSValue * rRateNetPurchases) + 
+        (fobSValue * rRateFOB);
+      
+      const calculatedCmf = (netSValue + wholeSValue + fobSValue) * cmfRate;
 
-      // Prefer calculated if report is zero, or as required by new logic
-      const finalRoyalty = reportDataFromDB.royaltyValue > 0 ? reportDataFromDB.royaltyValue : calculatedRoyalty;
-      const finalCmf = reportDataFromDB.cmfValue > 0 ? reportDataFromDB.cmfValue : calculatedCmf;
+      // Business Rule: Use recalculation as priority
+      const finalRoyalty = calculatedRoyalty > 0 ? calculatedRoyalty : reportDataFromDB.royaltyValue;
+      const finalCmf = calculatedCmf > 0 ? calculatedCmf : reportDataFromDB.cmfValue;
 
       const skuFormatted = pSku.padStart(6, '0');
       const category = categories?.find((c: any) => c.id === p.categoryId);
@@ -6302,7 +6337,7 @@ function DashboardView({
     });
     
     return Object.values(map);
-  }, [sales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
+  }, [sales, netSales, wholeSales, fobSales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
   const paginatedListing = sortedListing.slice(0, itemsPerPage);
@@ -6535,36 +6570,33 @@ function DashboardView({
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto max-h-[800px] scrollbar-thin">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead className="bg-[#F8FAFC] text-slate-500 font-semibold border-b border-slate-100 sticky top-0 z-10 shadow-sm">
+            <table className="w-full text-[11px] text-left border-collapse font-sans">
+              <thead className="bg-[#F8FAFC] text-slate-600 font-semibold border-b border-slate-100 sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-4 w-10"><input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" /></th>
-                  <th className="px-3 py-4 w-16 font-normal">Img</th>
-                  <SortableHeader label="Cód." sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-3 py-4 w-20 font-normal" />
-                  <SortableHeader label="Produto" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-6 py-4 font-normal" />
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">Faturamento Bruto</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Impostos Venda</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(=) Valor Líquido Venda</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Custo Prod.</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Impostos Prod.</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) Royalties</th>
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">(-) CMF</th>
-                  <SortableHeader label="(=) Margem Real" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-4 py-3 text-right font-normal whitespace-nowrap" />
-                  <th className="px-6 py-4 text-right font-normal whitespace-nowrap">% Margem</th>
-                  <th className="px-4 py-4 text-center font-normal">Ações</th>
+                  <th className="px-2 py-4 w-10 font-normal">Img</th>
+                  <SortableHeader label="Cód." sortKey="sku" currentSort={sortConfig} onSort={requestSort} className="px-2 py-4 w-16 font-normal" />
+                  <SortableHeader label="Produto" sortKey="productName" currentSort={sortConfig} onSort={requestSort} className="px-2 py-4 font-normal" />
+                  <th className="px-2 py-4 text-right font-normal" title="Faturamento Bruto">Fat. Bruto</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(-) Impostos Venda">(-) Imp. Venda</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(=) Valor Líquido Venda">(=) Vlr. Líq.</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(-) Custo Prod.">(-) Cust. Prod.</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(-) Impostos Prod.">(-) Imp. Prod.</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(-) Royalties">(-) Roy.</th>
+                  <th className="px-2 py-4 text-right font-normal" title="(-) CMF">(-) CMF</th>
+                  <SortableHeader label="(=) Margem" sortKey="realValue" currentSort={sortConfig} onSort={requestSort} className="px-2 py-4 text-right font-normal whitespace-nowrap" />
+                  <th className="px-2 py-4 text-right font-normal" title="% Margem">% Marg.</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-slate-50 bg-white">
                 {paginatedListing.map((row: any) => (
-                  <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="px-6 py-4"><input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500" /></td>
-                    <td className="px-3 py-4">
-                      <div className="w-10 h-10 bg-white rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center p-1 shadow-sm">
+                  <tr key={row.id} className="hover:bg-slate-50/30 transition-colors group">
+                    <td className="px-2 py-2">
+                      <div className="w-8 h-8 flex items-center justify-center">
                         {row.imageUrl ? (
                           <img 
                             src={row.imageUrl} 
                             alt="" 
-                            className="max-w-full max-h-full object-contain mix-blend-multiply transition-transform group-hover:scale-110" 
+                            className="max-w-full max-h-full object-contain mix-blend-multiply" 
                             referrerPolicy="no-referrer"
                             onError={(e) => { 
                               e.currentTarget.src = 'https://placehold.co/100x100?text=S/I';
@@ -6572,39 +6604,27 @@ function DashboardView({
                             }}
                           />
                         ) : (
-                          <Package size={16} className="text-slate-300" />
+                          <Package size={14} className="text-slate-300" />
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-4 text-slate-700 max-w-[100px] truncate font-mono text-[10px]" title={row.sku}>{row.sku}</td>
-                    <td className="px-6 py-4 text-slate-700">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate max-w-[200px]">{row.productName}</span>
-                        <span className="text-[10px] text-slate-400 capitalize">{row.categoryName} • {row.lineName}</span>
+                    <td className="px-2 py-2 text-slate-600 font-sans" title={row.sku}>{row.sku}</td>
+                    <td className="px-2 py-2 text-slate-600">
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-medium text-slate-700">{row.productName}</span>
+                        <span className="text-[11px] text-slate-600 capitalize">{row.categoryName} • {row.lineName}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right font-medium text-slate-900 whitespace-nowrap">{formatCurrency(row.totalValue)}</td>
-                    <td className="px-6 py-4 text-right text-red-500 whitespace-nowrap">{formatCurrency(row.taxes)}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-900 whitespace-nowrap bg-slate-50/30">{formatCurrency(row.netValue)}</td>
-                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{formatCurrency(row.totalProductCost)}</td>
-                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{formatCurrency(row.totalProductTaxes)}</td>
-                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{formatCurrency(row.royaltyValue)}</td>
-                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{formatCurrency(row.cmfValue)}</td>
-                    <td className="px-6 py-4 text-right font-bold text-emerald-700 bg-emerald-50/20 whitespace-nowrap underline decoration-emerald-100 decoration-2 underline-offset-4">{formatCurrency(row.realValue)}</td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${row.marginPercentage > 30 ? 'bg-emerald-100 text-emerald-700' : row.marginPercentage > 15 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                        {formatPercentage(row.marginPercentage)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-blue-600 hover:bg-blue-50">
-                          <Pencil size={14} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-600 hover:bg-red-50">
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.totalValue)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.taxes)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap bg-slate-50/10">{formatCurrency(row.netValue)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.totalProductCost)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.totalProductTaxes)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.royaltyValue)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.cmfValue)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.realValue)}</td>
+                    <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">
+                      {formatPercentage(row.marginPercentage)}
                     </td>
                   </tr>
                 ))}
