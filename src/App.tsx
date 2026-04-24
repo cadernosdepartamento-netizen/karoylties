@@ -6089,8 +6089,8 @@ function DashboardView({
       }
     });
 
-    // 2. Aggregate from ALL Sales
-    allSales.forEach((sale: any) => {
+    // 2. Aggregate from ALL Sales (Only using 'sales' as requested)
+    sales.forEach((sale: any) => {
       const sku = String(sale.sku || '').trim();
       if (!sku) return;
       
@@ -6107,27 +6107,27 @@ function DashboardView({
       initGrid(y, m);
 
       const quantity = Number(sale.quantity) || 0;
-      const total = Number(sale.totalValue) || Number(sale.totalValue_brl) || 0;
-      let net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
+      const total = Number(sale.Vlr_Total || sale.totalValue || 0);
+      const tax = (
+        Number(sale.ICMS || sale.icms || 0) + 
+        Number(sale.Pis || sale.pis || 0) + 
+        Number(sale.Cofins || sale.cofins || 0) + 
+        Number(sale.IPI || sale.ipi || 0)
+      );
+      const net = total - tax;
       
-      const icms = Number(sale.icms) || 0;
-      const pis = Number(sale.pis) || 0;
-      const cofins = Number(sale.cofins) || 0;
-      const ipi = Number(sale.ipi) || 0;
-      const tax = icms + pis + cofins + ipi;
-      
-      if (net === 0 && total > 0) {
-        net = total - tax;
-      }
       const unitCost = Number(product.avgUnitCost) || 0;
+      const unitProdTaxes = product.totalQuantityProduced > 0 ? (Number(product.totalTaxesGlobal) || 0) / product.totalQuantityProduced : 0;
+      
       const totalProdCost = quantity * unitCost;
+      const totalProdTaxes = quantity * unitProdTaxes;
 
       if (summaryValueType === 'quantidade') grid[y][m] += quantity;
       else if (summaryValueType === 'faturamento_bruto') grid[y][m] += total;
       else if (summaryValueType === 'impostos') grid[y][m] += tax;
       else if (summaryValueType === 'valor_liquido') grid[y][m] += net;
       else if (summaryValueType === 'custo_produto') grid[y][m] += totalProdCost;
-      else if (summaryValueType === 'margem_real') grid[y][m] += (net - totalProdCost); 
+      else if (summaryValueType === 'margem_real') grid[y][m] += (net - totalProdCost - totalProdTaxes); 
     });
 
     // 3. Aggregate from ALL Reports (Royalties, CMF)
@@ -6172,31 +6172,27 @@ function DashboardView({
     });
 
     return { years: yearsList, months, grid };
-  }, [allSales, reports, products, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus, summaryValueType]);
+  }, [sales, reports, products, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus, summaryValueType]);
 
   const groupedByProduct = React.useMemo(() => {
     // Standard rates if not found in contract
     const DEFAULT_ROYALTY_RATE = 0.10; 
     const DEFAULT_CMF_RATE = 0.02;
 
-    // 1. First, compute total sales per SKU directly from the `allSales` array
+    // 1. First, compute total sales per SKU directly from the `sales` array
     const salesAggregated: Record<string, { quantity: number, totalValue: number, netValue: number, taxes: number }> = {};
-    allSales.forEach((sale: any) => {
+    sales.forEach((sale: any) => {
       const sku = String(sale.sku || '').trim();
       if (!sku) return;
       
-      const total = Number(sale.totalValue) || Number(sale.totalValue_brl) || 0;
-      let net = Number(sale.netValue) || Number(sale.valor_liquido_brl) || Number(sale.netValue_brl) || 0;
-      
-      const icms = Number(sale.icms) || 0;
-      const pis = Number(sale.pis) || 0;
-      const cofins = Number(sale.cofins) || 0;
-      const ipi = Number(sale.ipi) || 0;
-      const taxesSum = icms + pis + cofins + ipi;
-      
-      if (net === 0 && total > 0) {
-          net = total - taxesSum;
-      }
+      const total = Number(sale.Vlr_Total || sale.totalValue || 0);
+      const taxesSum = (
+        Number(sale.ICMS || sale.icms || 0) + 
+        Number(sale.Pis || sale.pis || 0) + 
+        Number(sale.Cofins || sale.cofins || 0) + 
+        Number(sale.IPI || sale.ipi || 0)
+      );
+      const net = total - taxesSum;
       
       if (!salesAggregated[sku]) {
         salesAggregated[sku] = { quantity: 0, totalValue: 0, netValue: 0, taxes: 0 };
@@ -6207,6 +6203,7 @@ function DashboardView({
       salesAggregated[sku].netValue += net;
       salesAggregated[sku].taxes += taxesSum;
     });
+
 
     // 2. Compute total royalties and CMF from reports per productId
     const reportsAggregated: Record<string, { quantity: number, royaltyValue: number, cmfValue: number }> = {};
@@ -6305,7 +6302,7 @@ function DashboardView({
     });
     
     return Object.values(map);
-  }, [allSales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
+  }, [sales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
   const paginatedListing = sortedListing.slice(0, itemsPerPage);
