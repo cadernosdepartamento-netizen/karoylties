@@ -125,6 +125,13 @@ const getSafeDate = (dateVal: string | number) => {
   return new Date(dateVal);
 };
 
+// Formatting utilities
+const formatCurrency = (val: number) => 
+  (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const formatPercentage = (val: number, decimals: number = 1) => 
+  (val || 0).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + '%';
+
 // Types
 interface License { 
   id: string; 
@@ -1081,6 +1088,9 @@ function MainApp() {
                 categories={productCategories}
                 isAdmin={isAdmin}
                 sales={sales}
+                netSales={netSales}
+                wholeSales={wholeSales}
+                fobSales={fobSales}
               />
             )}
             {activeTab === 'contracts' && <ContractsView contracts={contracts} licenses={licenses} reports={reports} lines={lines} products={products} payments={payments} isAdmin={isAdmin} />}
@@ -6008,7 +6018,20 @@ function AddPaymentDialog({ contracts, licenses }: { contracts: Contract[], lice
   );
 }
 
-function DashboardView({ contracts, reports, payments, licenses, lines, products, categories, isAdmin, sales }: any) {
+function DashboardView({ 
+  contracts, 
+  reports, 
+  payments, 
+  licenses, 
+  lines, 
+  products, 
+  categories, 
+  isAdmin, 
+  sales, 
+  netSales = [], 
+  wholeSales = [], 
+  fobSales = [] 
+}: any) {
   const [filterLicenseIds, setFilterLicenseIds] = useState<string[]>([]);
   const [filterLineIds, setFilterLineIds] = useState<string[]>([]);
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
@@ -6032,6 +6055,11 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     { label: 'Valor CMF', value: 'valor_cmf' },
     { label: 'Margem Real', value: 'margem_real' }
   ];
+
+  // Consolidate all sales sources
+  const allSales = React.useMemo(() => {
+    return [...sales, ...netSales, ...wholeSales, ...fobSales];
+  }, [sales, netSales, wholeSales, fobSales]);
 
   const summaryGrid = React.useMemo(() => {
     const grid: Record<number, Record<number, number>> = {};
@@ -6062,7 +6090,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     });
 
     // 2. Aggregate from ALL Sales
-    sales.forEach((sale: any) => {
+    allSales.forEach((sale: any) => {
       const sku = String(sale.sku || '').trim();
       if (!sku) return;
       
@@ -6144,12 +6172,16 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
     });
 
     return { years: yearsList, months, grid };
-  }, [sales, reports, products, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus, summaryValueType]);
+  }, [allSales, reports, products, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus, summaryValueType]);
 
   const groupedByProduct = React.useMemo(() => {
-    // 1. First, compute total sales per SKU directly from the `sales` array
+    // Standard rates if not found in contract
+    const DEFAULT_ROYALTY_RATE = 0.10; 
+    const DEFAULT_CMF_RATE = 0.02;
+
+    // 1. First, compute total sales per SKU directly from the `allSales` array
     const salesAggregated: Record<string, { quantity: number, totalValue: number, netValue: number, taxes: number }> = {};
-    sales.forEach((sale: any) => {
+    allSales.forEach((sale: any) => {
       const sku = String(sale.sku || '').trim();
       if (!sku) return;
       
@@ -6185,7 +6217,6 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
 
     reports.forEach((r: any) => {
       let prodId = r.productId;
-      // Fallback matching by SKU or Barcode if productId is not specific
       if (!prodId || prodId === 'Geral' || prodId === 'unknown' || prodId === '') {
         const lookupCode = String(r.productSku || r.sku || r.codBarras || "").trim();
         if (lookupCode) {
@@ -6221,11 +6252,24 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       if (!pSku) return;
 
       const salesData = salesAggregated[pSku] || { quantity: 0, totalValue: 0, netValue: 0, taxes: 0 };
-      const reportData = reportsAggregated[p.id] || { quantity: 0, royaltyValue: 0, cmfValue: 0 };
+      const reportDataFromDB = reportsAggregated[p.id] || { quantity: 0, royaltyValue: 0, cmfValue: 0 };
 
-      if (salesData.totalValue === 0 && reportData.royaltyValue === 0 && salesData.quantity === 0) {
-        return; // Skip products with no activity
+      if (salesData.totalValue === 0 && reportDataFromDB.royaltyValue === 0 && salesData.quantity === 0) {
+        return; 
       }
+
+      // Business Rule: Use percentage from contract or default
+      const contract = contracts?.find((c: any) => c.licenseId === p.licenseId);
+      const royaltyRate = contract?.royaltyRate || DEFAULT_ROYALTY_RATE;
+      const cmfRate = contract?.marketingFundRate || DEFAULT_CMF_RATE;
+
+      // Calculation of Royalties and CMF based on Net Sales Value
+      const calculatedRoyalty = salesData.netValue * royaltyRate;
+      const calculatedCmf = salesData.netValue * cmfRate;
+
+      // Prefer calculated if report is zero, or as required by new logic
+      const finalRoyalty = reportDataFromDB.royaltyValue > 0 ? reportDataFromDB.royaltyValue : calculatedRoyalty;
+      const finalCmf = reportDataFromDB.cmfValue > 0 ? reportDataFromDB.cmfValue : calculatedCmf;
 
       const skuFormatted = pSku.padStart(6, '0');
       const category = categories?.find((c: any) => c.id === p.categoryId);
@@ -6237,7 +6281,7 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
       
       const totalProductCost = salesData.quantity * unitCost; 
       const totalProductTaxes = salesData.quantity * unitTaxes;
-      const realValue = salesData.netValue - totalProductCost - totalProductTaxes - reportData.royaltyValue - reportData.cmfValue;
+      const realValue = salesData.netValue - totalProductCost - totalProductTaxes - finalRoyalty - finalCmf;
 
       map[pSku] = {
         id: p.id,
@@ -6253,15 +6297,15 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
         taxes: salesData.taxes,
         totalProductCost: totalProductCost,
         totalProductTaxes: totalProductTaxes,
-        royaltyValue: reportData.royaltyValue,
-        cmfValue: reportData.cmfValue,
+        royaltyValue: finalRoyalty,
+        cmfValue: finalCmf,
         realValue: realValue,
         marginPercentage: salesData.totalValue > 0 ? (realValue / salesData.totalValue) * 100 : 0
       };
     });
     
     return Object.values(map);
-  }, [sales, reports, products, categories, licenses, lines, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
+  }, [allSales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
   const paginatedListing = sortedListing.slice(0, itemsPerPage);
@@ -6542,17 +6586,17 @@ function DashboardView({ contracts, reports, payments, licenses, lines, products
                         <span className="text-[10px] text-slate-400 capitalize">{row.categoryName} • {row.lineName}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right font-medium text-slate-900 whitespace-nowrap">{row.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right text-red-500 whitespace-nowrap">{row.taxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-900 whitespace-nowrap bg-slate-50/30">{row.netValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{row.totalProductCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{row.totalProductTaxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{row.royaltyValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{row.cmfValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td className="px-6 py-4 text-right font-bold text-emerald-700 bg-emerald-50/20 whitespace-nowrap underline decoration-emerald-100 decoration-2 underline-offset-4">{row.realValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td className="px-6 py-4 text-right font-medium text-slate-900 whitespace-nowrap">{formatCurrency(row.totalValue)}</td>
+                    <td className="px-6 py-4 text-right text-red-500 whitespace-nowrap">{formatCurrency(row.taxes)}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-slate-900 whitespace-nowrap bg-slate-50/30">{formatCurrency(row.netValue)}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{formatCurrency(row.totalProductCost)}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 whitespace-nowrap">{formatCurrency(row.totalProductTaxes)}</td>
+                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{formatCurrency(row.royaltyValue)}</td>
+                    <td className="px-6 py-4 text-right text-amber-600 whitespace-nowrap">{formatCurrency(row.cmfValue)}</td>
+                    <td className="px-6 py-4 text-right font-bold text-emerald-700 bg-emerald-50/20 whitespace-nowrap underline decoration-emerald-100 decoration-2 underline-offset-4">{formatCurrency(row.realValue)}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${row.marginPercentage > 30 ? 'bg-emerald-100 text-emerald-700' : row.marginPercentage > 15 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                        {row.marginPercentage.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                        {formatPercentage(row.marginPercentage)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
