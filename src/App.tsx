@@ -6080,7 +6080,7 @@ function DashboardView({
       const matchLine = filterLineIds.length === 0 || filterLineIds.includes(p.lineId);
       const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(p.categoryId);
       const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(String(p.launchYear || ''));
-      const pSku = String(p.sku || '').trim();
+      const pSku = String(p.sku || '').trim().padStart(6, '0');
       const matchSku = filterSkus.length === 0 || filterSkus.includes(pSku);
       
       if (matchLicense && matchLine && matchCategory && matchLaunchYear && matchSku) {
@@ -6182,7 +6182,7 @@ function DashboardView({
     // 1. First, compute total sales per SKU directly from the `sales` array
     const salesAggregated: Record<string, { quantity: number, totalValue: number, netValue: number, taxes: number }> = {};
     sales.forEach((sale: any) => {
-      const sku = String(sale.sku || '').trim();
+      const sku = String(sale.sku || '').trim().padStart(6, '0');
       if (!sku) return;
       
       const total = Number(sale.Vlr_Total || sale.totalValue || 0);
@@ -6210,19 +6210,19 @@ function DashboardView({
     const fobSalesAggregated: Record<string, number> = {};
 
     netSales.forEach((s: any) => {
-      const sku = String(s.sku || '').trim();
+      const sku = String(s.sku || '').trim().padStart(6, '0');
       if (!sku) return;
       netSalesAggregated[sku] = (netSalesAggregated[sku] || 0) + (Number(s.netValue) || 0);
     });
 
     wholeSales.forEach((s: any) => {
-      const sku = String(s.sku || '').trim();
+      const sku = String(s.sku || '').trim().padStart(6, '0');
       if (!sku) return;
       wholeSalesAggregated[sku] = (wholeSalesAggregated[sku] || 0) + (Number(s.netValue) || 0);
     });
 
     fobSales.forEach((s: any) => {
-      const sku = String(s.sku || '').trim();
+      const sku = String(s.sku || '').trim().padStart(6, '0');
       if (!sku) return;
       fobSalesAggregated[sku] = (fobSalesAggregated[sku] || 0) + (Number(s.valor_liquido_brl) || Number(s.netValue_brl) || 0);
     });
@@ -6261,7 +6261,7 @@ function DashboardView({
       const matchLine = filterLineIds.length === 0 || filterLineIds.includes(p.lineId);
       const matchCategory = filterCategoryIds.length === 0 || filterCategoryIds.includes(p.categoryId);
       const matchLaunchYear = filterLaunchYears.length === 0 || filterLaunchYears.includes(String(p.launchYear || ''));
-      const pSku = String(p.sku || '').trim();
+      const pSku = String(p.sku || '').trim().padStart(6, '0');
       const matchSku = filterSkus.length === 0 || filterSkus.includes(pSku);
       
       if (!(matchLicense && matchLine && matchCategory && matchLaunchYear && matchSku)) {
@@ -6308,11 +6308,8 @@ function DashboardView({
       const license = licenses.find((l: any) => l.id === p.licenseId);
       const line = lines.find((l: any) => l.id === p.lineId);
 
-      const unitCost = Number(p.avgUnitCost) || 0;
-      const unitTaxes = p.totalQuantityProduced > 0 ? (Number(p.totalTaxesGlobal) || 0) / p.totalQuantityProduced : 0;
-      
-      const totalProductCost = salesData.quantity * unitCost; 
-      const totalProductTaxes = salesData.quantity * unitTaxes;
+      const totalProductCost = Number(p.totalCostValue) || 0;
+      const totalProductTaxes = Number(p.totalTaxesGlobal) || 0;
       const realValue = salesData.netValue - totalProductCost - totalProductTaxes - finalRoyalty - finalCmf;
 
       map[pSku] = {
@@ -6340,7 +6337,6 @@ function DashboardView({
   }, [sales, netSales, wholeSales, fobSales, reports, products, categories, licenses, lines, contracts, filterLicenseIds, filterLineIds, filterCategoryIds, filterLaunchYears, filterSkus]);
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
-  const paginatedListing = sortedListing.slice(0, itemsPerPage);
 
   const monthsBR = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
@@ -6494,18 +6490,6 @@ function DashboardView({
               <CardDescription className="text-xs text-slate-400 mt-1">Gerencie os produtos vinculados às linhas</CardDescription>
             </div>
             <div className="flex items-center gap-3">
-              <Label className="text-xs text-slate-400">Visualização:</Label>
-              <Select value={itemsPerPage.toString()} onValueChange={v => setItemsPerPage(parseInt(v))}>
-                <SelectTrigger className="w-24 h-9 text-xs rounded-xl bg-slate-50 border-slate-200">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
 
@@ -6570,7 +6554,7 @@ function DashboardView({
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto max-h-[800px] scrollbar-thin">
-            <table className="w-full text-[11px] text-left border-collapse font-sans">
+            <table className="w-full text-[13px] text-left border-collapse font-sans">
               <thead className="bg-[#F8FAFC] text-slate-600 font-semibold border-b border-slate-100 sticky top-0 z-10">
                 <tr>
                   <th className="px-2 py-4 w-10 font-normal">Img</th>
@@ -6588,7 +6572,7 @@ function DashboardView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 bg-white">
-                {paginatedListing.map((row: any) => (
+                {sortedListing.map((row: any) => (
                   <tr key={row.id} className="hover:bg-slate-50/30 transition-colors group">
                     <td className="px-2 py-2">
                       <div className="w-8 h-8 flex items-center justify-center">
@@ -6612,7 +6596,6 @@ function DashboardView({
                     <td className="px-2 py-2 text-slate-600">
                       <div className="flex flex-col leading-tight">
                         <span className="font-medium text-slate-700">{row.productName}</span>
-                        <span className="text-[11px] text-slate-600 capitalize">{row.categoryName} • {row.lineName}</span>
                       </div>
                     </td>
                     <td className="px-2 py-2 text-right text-slate-600 font-sans whitespace-nowrap">{formatCurrency(row.totalValue)}</td>
@@ -7833,6 +7816,24 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
           </div>
       </CardHeader>
         <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-normal mb-0.5">Quantidade</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{filteredSales.reduce((acc, s) => acc + (Number(s.quantity) || 0), 0).toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-normal mb-0.5">Valor Total</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{filteredSales.reduce((acc, s) => acc + (Number(s.totalValueField || s.totalValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-normal mb-0.5">Total de Impostos</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{filteredSales.reduce((acc, s) => acc + (Number(s.totalTaxesField || s.totalTaxes) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-normal mb-0.5">Total Líquido</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{filteredSales.reduce((acc, s) => acc + (Number(s.netValueField || s.netValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          </div>
           <div className="rounded-md border border-slate-200 overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
@@ -7855,6 +7856,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 text-right">Taxa dólar</th>}
                       <SortableHeader label="Valor Total" sortKey="totalValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxes" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       <SortableHeader label="Total Líquido" sortKey="netValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right font-medium" />
@@ -7873,6 +7875,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={individualSortConfig} onSort={requestIndividualSort} />
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 text-right">Taxa dólar</th>}
                       <SortableHeader label="Valor Unitário" sortKey="unitPriceField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Valor Total" sortKey="totalValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxesField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
@@ -7915,6 +7918,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600">{group.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={group.description}>{group.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{group.quantity.toLocaleString('pt-BR')}</td>
+                      {activeTab === 'sales_fob' && <td className="px-4 py-3 text-sm text-slate-600 text-right">-</td>}
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">{group.totalTaxes.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 text-right font-medium">{group.netValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}</td>
@@ -7979,6 +7983,11 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.sku}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
+                      {activeTab === 'sales_fob' && (
+                        <td className="px-4 py-3 text-sm text-slate-600 text-right">
+                          {currencyView === 'brl' && isFob && sale.exchangeRate ? `$ ${Number(sale.exchangeRate).toFixed(2)}` : '-'}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">
                         {unitPriceValue.toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                       </td>
@@ -8020,13 +8029,28 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                     </td>
                     {viewMode === 'individual' && <td className="px-4 py-4 text-right"></td>}
                     <td className="px-4 py-4 text-sm text-slate-600 text-right">
-                      {filteredSales.reduce((acc, s) => acc + (Number(s.totalValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {filteredSales.reduce((acc, s) => acc + (
+                        activeTab === 'sales_fob' 
+                        ? (currencyView === 'usd' ? (Number(s.totalValue_usd) || 0) : (Number(s.totalValue_brl) || 0))
+                        : (Number(s.totalValue) || 0)
+                      ), 0).toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                     </td>
                     <td className="px-4 py-4 text-sm text-slate-600 text-right">
-                      {filteredSales.reduce((acc, s) => acc + ((Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0)), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {filteredSales.reduce((acc, s) => acc + (
+                        activeTab === 'sales_fob'
+                        ? (currencyView === 'usd'
+                            ? ((Number(s.icms_usd) || 0) + (Number(s.pis_usd) || 0) + (Number(s.cofins_usd) || 0) + (Number(s.ipi_usd) || 0))
+                            : ((Number(s.icms_brl) || 0) + (Number(s.pis_brl) || 0) + (Number(s.cofins_brl) || 0) + (Number(s.ipi_brl) || 0))
+                          )
+                        : ((Number(s.icms) || 0) + (Number(s.pis) || 0) + (Number(s.cofins) || 0) + (Number(s.ipi) || 0))
+                      ), 0).toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                     </td>
                     <td className="px-4 py-4 text-sm text-slate-900 text-right font-bold">
-                      {filteredSales.reduce((acc, s) => acc + (Number(s.netValue) || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {filteredSales.reduce((acc, s) => acc + (
+                        activeTab === 'sales_fob'
+                        ? (currencyView === 'usd' ? (Number(s.valor_liquido_usd) || 0) : (Number(s.valor_liquido_brl) || 0))
+                        : (Number(s.netValue) || 0)
+                      ), 0).toLocaleString('pt-BR', { style: 'currency', currency: activeTab === 'sales_fob' && currencyView === 'usd' ? 'USD' : 'BRL' })}
                     </td>
                     {activeTab === 'sales_fob' ? (
                        <td colSpan={viewMode === 'grouped' ? 3 : 2} className="px-4 py-4 text-right"></td>
@@ -11652,6 +11676,25 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
           </div>
         </CardHeader>
         <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Qtd Total Produzida</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{totalsSummary.qty.toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total de Impostos</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{totalsSummary.taxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total Investimento</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{totalsSummary.cost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
+              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Valor Líquido Total</p>
+              <p className="text-sm font-medium text-slate-700 leading-tight">{totalsSummary.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-end gap-4 mb-6">
             {/* SKU Filter */}
             <div className="min-w-[200px] flex-[2] space-y-1">
@@ -11738,42 +11781,10 @@ function ProductsView({ products, lines, categories, licenses, isAdmin }: { prod
                 />
               </div>
             )}
-
+            
             <div className="flex-grow" />
-            <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-500 whitespace-nowrap">Visualização:</span>
-                <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); }}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Linhas por página" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10 itens</SelectItem>
-                    <SelectItem value="50">50 itens</SelectItem>
-                    <SelectItem value="100">100 itens</SelectItem>
-                    <SelectItem value={filteredProducts.length.toString()}>Todos os itens</SelectItem>
-                  </SelectContent>
-                </Select>
-            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
-              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Qtd Total Produzida</p>
-              <p className="text-sm font-bold text-slate-900 leading-tight">{totalsSummary.qty.toLocaleString('pt-BR')}</p>
-            </div>
-            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
-              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total de Impostos</p>
-              <p className="text-sm font-bold text-red-600 leading-tight">{totalsSummary.taxes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-            </div>
-            <div className="bg-white p-2 px-3 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center h-16">
-              <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Total Investimento</p>
-              <p className="text-sm font-bold text-slate-900 leading-tight">{totalsSummary.cost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-            </div>
-            <div className="bg-white p-2 px-3 rounded-lg border border-emerald-100 shadow-sm bg-emerald-50/10 flex flex-col justify-center h-16">
-              <p className="text-[9px] text-emerald-600 uppercase tracking-wider font-semibold mb-0.5">Valor Líquido Total</p>
-              <p className="text-sm font-bold text-emerald-700 leading-tight">{totalsSummary.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-            </div>
-          </div>
 
           <div className="rounded-md border border-slate-200 overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-[11px] text-left border-collapse">
