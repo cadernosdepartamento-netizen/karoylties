@@ -7,7 +7,7 @@ import React, { useState, useEffect, Component, ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { auth, db, storage, signIn, logOut, registerWithEmail, loginWithEmail, handleFirestoreError, OperationType, uploadFile } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch, increment } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, writeBatch, increment, setDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { 
   LayoutDashboard, 
@@ -44,6 +44,7 @@ import {
   List,
   Pencil,
   FileDown,
+  Clock,
   Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -9287,7 +9288,7 @@ function EditObligationDialog({ obligation, contracts, licenses }: { obligation:
   const [notes, setNotes] = useState(obligation.notes || '');
   const [year, setYear] = useState(String(obligation.year || ''));
   const [month, setMonth] = useState(String(obligation.month || ''));
-  const [status, setStatus] = useState<'pending' | 'paid'>(obligation.status || 'pending');
+  const [status, setStatus] = useState<'pending' | 'scheduled' | 'paid'>(obligation.status || 'pending');
   const [invoice, setInvoice] = useState(obligation.invoice || '');
   const [paymentDate, setPaymentDate] = useState(obligation.paymentDate || '');
   
@@ -9299,7 +9300,9 @@ function EditObligationDialog({ obligation, contracts, licenses }: { obligation:
   const [documentUrl, setDocumentUrl] = useState(obligation.documentUrl || '');
   const [documentName, setDocumentName] = useState(obligation.documentName || '');
 
-  const filteredContracts = contracts.filter(c => !licenseId || c.licenseId === licenseId);
+  const currentLicense = licenses.find(l => l.id === licenseId);
+  const currentContract = contracts.find(c => c.id === contractId);
+  const description = obligation.description || obligation.notes || type;
 
   const handleDelete = async () => {
     try {
@@ -9325,19 +9328,33 @@ function EditObligationDialog({ obligation, contracts, licenses }: { obligation:
 
       const parsedAmount = parseCurrencyBR(amount);
 
+      const updateData: any = {
+        licenseId,
+        contractId,
+        type,
+        description,
+        dueDate,
+        amount: parsedAmount,
+        currency,
+        notes,
+        invoice,
+        status,
+        updatedAt: serverTimestamp()
+      };
+
       if (status === 'paid') {
         await addDoc(collection(db, 'payments'), {
           contractId,
           licenseId,
-          type: type === 'MG' ? 'mg' : type === 'CMF' ? 'marketing' : 'excess',
+          type: type === 'MG' || type.includes('Mínimo') ? 'mg' : (type === 'CMF' || type.includes('Marketing')) ? 'marketing' : 'excess',
           amount: parsedAmount,
           currency,
           dueDate,
           date: paymentDate || new Date().toISOString().split('T')[0],
           status: 'paid',
-          notes: `Pago via Cronograma: ${notes}`,
-          year: Number(year),
-          month: Number(month),
+          notes: `Pago via Cronograma: ${description || notes}`,
+          year: Number(year) || null,
+          month: Number(month) || null,
           invoice,
           responsible,
           identification,
@@ -9348,38 +9365,21 @@ function EditObligationDialog({ obligation, contracts, licenses }: { obligation:
           updatedAt: serverTimestamp()
         });
 
-        await updateDoc(doc(db, 'cronograma_obrigacoes', obligation.id), {
-          status: 'paid',
+        await setDoc(doc(db, 'cronograma_obrigacoes', obligation.id), {
+          ...updateData,
           paymentDate: paymentDate || new Date().toISOString().split('T')[0],
-          invoice,
-          notes,
           documentUrl: finalDocumentUrl,
           documentName: finalDocumentName,
-          updatedAt: serverTimestamp()
-        });
+        }, { merge: true });
         
         toast.success('Obrigação registrada como paga!');
       } else {
-        await updateDoc(doc(db, 'cronograma_obrigacoes', obligation.id), {
-          licenseId,
-          contractId,
-          type,
-          dueDate,
-          amount: parsedAmount,
-          currency,
-          notes,
-          year: Number(year),
-          month: Number(month),
-          invoice,
-          status: 'pending',
-          documentUrl: finalDocumentUrl,
-          documentName: finalDocumentName,
-          updatedAt: serverTimestamp()
-        });
+        await setDoc(doc(db, 'cronograma_obrigacoes', obligation.id), updateData, { merge: true });
         toast.success('Obrigação atualizada!');
       }
       setOpen(false);
     } catch (err) {
+      console.error(err);
       toast.error('Erro ao salvar.');
     } finally {
       setUploading(false);
@@ -9411,71 +9411,66 @@ function EditObligationDialog({ obligation, contracts, licenses }: { obligation:
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label className="text-[11px]">Licenciador</Label>
-              <Select onValueChange={setLicenseId} value={licenseId}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {licenses.map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.nomelicenciador}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {currentLicense?.nomelicenciador || licenseId}
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-[11px]">Contrato</Label>
-              <Select onValueChange={setContractId} value={contractId}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {filteredContracts.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.contractNumber || c.id.slice(0,8)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {currentContract?.contractNumber || contractId.slice(0,8)}
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label className="text-[11px]">Tipo</Label>
-              <Select onValueChange={setType} value={type}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MG">MG</SelectItem>
-                  <SelectItem value="CMF">CMF</SelectItem>
-                  <SelectItem value="Excess">Royalties</SelectItem>
-                  <SelectItem value="Outros">Outros</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {type}
+              </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-[11px]">Ano</Label>
-              <Input className="h-9" type="number" value={year} onChange={(e) => setYear(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[11px]">Mês (Opcional)</Label>
-              <Input className="h-9" type="number" value={month} onChange={(e) => setMonth(e.target.value)} />
+              <Label className="text-[11px]">Descrição</Label>
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {description}
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label className="text-[11px]">Valor</Label>
-              <Input 
-                className="h-9"
-                value={amount} 
-                onChange={(e) => setAmount(formatCurrencyBR(e.target.value))} 
-              />
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {getCurrencySymbol(currency)} {amount}
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-[11px]">Vencimento</Label>
-              <Input className="h-9" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <div className="h-9 px-3 flex items-center bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-600 font-medium">
+                {dueDate ? dueDate.split('-').reverse().join('/') : '-'}
+              </div>
             </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Invoice/NF</Label>
+              <Input 
+                className="h-9 text-xs" 
+                value={invoice} 
+                onChange={(e) => setInvoice(e.target.value)} 
+                placeholder="Nº da Invoice ou Notas Fiscal"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
             <div className="space-y-1">
               <Label className="text-[11px]">Status</Label>
               <Select onValueChange={(v: any) => setStatus(v)} value={status}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-10 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pending">Pendente</SelectItem>
-                  <SelectItem value="paid">Pago</SelectItem>
+                  <SelectItem value="pending">Pendente (Calculado)</SelectItem>
+                  <SelectItem value="scheduled">Programado (Invoice registrada)</SelectItem>
+                  <SelectItem value="paid">Pago (Finalizado)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -9888,28 +9883,51 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
     dbObligations.forEach(ob => {
       const license = licenses.find(l => l.id === ob.licenseId);
       const contract = contracts.find(c => c.id === ob.contractId);
-      list.push({
+      
+      const existingIdx = list.findIndex(item => item.id === ob.id);
+      
+      const obData = {
         id: ob.id,
         licenseId: ob.licenseId,
         contractId: ob.contractId,
         type: ob.type === 'CMF' ? 'Fundo de Marketing (CMF)' : ob.type,
-        description: ob.notes || ob.type,
+        description: ob.description || ob.notes || ob.type,
         license: license?.nomelicenciador || '-',
         contract: contract?.contractNumber || contract?.id || ob.contractId,
-        installmentNumber: '-',
+        installmentNumber: ob.installmentNumber || '-',
         year: ob.year,
         month: ob.month,
         amount: ob.amount,
         currency: ob.currency || 'BRL',
-        invoice: '-', // Real obligations table can be updated to support invoices and docs later
+        invoice: ob.invoice || '-',
         dueDate: ob.dueDate || '-',
         status: ob.status || 'pending',
-        paymentDate: '-', 
-        documentUrl: undefined,
-        documentName: undefined,
+        paymentDate: ob.paymentDate || '-',
+        documentUrl: ob.documentUrl,
+        documentName: ob.documentName,
         rawDate: ob.dueDate || '',
         notes: ob.notes
-      });
+      };
+
+      if (existingIdx !== -1) {
+        // Merge stored info into calculated item, but only if db fields exist
+        const existing = list[existingIdx];
+        list[existingIdx] = { 
+          ...existing, 
+          ...obData,
+          // Explicitly keep calculated fields if DB doesn't have them
+          amount: ob.amount !== undefined ? ob.amount : existing.amount,
+          dueDate: ob.dueDate || existing.dueDate,
+          description: ob.description || existing.description,
+          invoice: ob.invoice || existing.invoice,
+          status: ob.status || existing.status,
+          paymentDate: ob.paymentDate || existing.paymentDate,
+          documentUrl: ob.documentUrl || existing.documentUrl,
+          documentName: ob.documentName || existing.documentName,
+        };
+      } else {
+        list.push(obData);
+      }
     });
 
     // Sort based on user request: Licenciador, Contrato, MG antes de Fundo de marketing, Ano e parcela
@@ -9943,7 +9961,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
       const instB = isNaN(Number(b.installmentNumber)) ? 0 : Number(b.installmentNumber);
       return instA - instB;
     });
-  }, [contracts, payments, reports, licenses]);
+  }, [contracts, payments, reports, licenses, dbObligations]);
 
   const summaryData = React.useMemo(() => {
     const filtered = obligations.filter(ob => {
@@ -10385,6 +10403,10 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                       {ob.status === 'paid' ? (
                         <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[9px]">
                           <CheckCircle2 size={12} /> PAGO
+                        </div>
+                      ) : ob.status === 'scheduled' ? (
+                        <div className="flex items-center justify-center gap-1.5 text-blue-600 font-bold text-[9px]">
+                          <Clock size={12} /> PROGRAMADO
                         </div>
                       ) : (
                         <div className="flex items-center justify-center gap-1.5 text-amber-600 font-bold text-[9px]">
