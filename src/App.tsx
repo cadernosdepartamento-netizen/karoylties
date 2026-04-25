@@ -126,6 +126,8 @@ const getSafeDate = (dateVal: string | number) => {
 };
 
 // Formatting utilities
+const monthsBR = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
 const formatCurrency = (val: number) => 
   (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -6346,8 +6348,6 @@ function DashboardView({
 
   const { items: sortedListing, requestSort, sortConfig } = useSortableData(groupedByProduct, { key: 'realValue', direction: 'desc' });
 
-  const monthsBR = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-
   return (
     <div className="space-y-8">
       {/* 1. Resumo por Período */}
@@ -7864,7 +7864,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={groupedSortConfig} onSort={requestGroupedSort} />
-                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 font-normal text-right">Taxa dólar</th>}
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-[11px] text-slate-500 font-normal text-right uppercase tracking-wider">Taxa dólar</th>}
                       <SortableHeader label="Valor Total" sortKey="totalValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxes" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
                       <SortableHeader label="Total Líquido" sortKey="netValue" currentSort={groupedSortConfig} onSort={requestGroupedSort} className="text-right" />
@@ -7883,7 +7883,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <SortableHeader label="Código SKU" sortKey="sku" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Descrição" sortKey="description" currentSort={individualSortConfig} onSort={requestIndividualSort} />
                       <SortableHeader label="Quantidade" sortKey="quantity" currentSort={individualSortConfig} onSort={requestIndividualSort} />
-                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-sm text-slate-500 font-normal text-right">Taxa dólar</th>}
+                      {activeTab === 'sales_fob' && <th className="px-4 py-3 text-[11px] text-slate-500 font-normal text-right uppercase tracking-wider">Taxa dólar</th>}
                       <SortableHeader label="Valor Unitário" sortKey="unitPriceField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Valor Total" sortKey="totalValueField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
                       <SortableHeader label="Total Impostos" sortKey="totalTaxesField" currentSort={individualSortConfig} onSort={requestIndividualSort} className="text-right" />
@@ -9717,6 +9717,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
             licenseId: contract.licenseId,
             contractId: contract.id,
             type: 'Mínimo Garantido (MG)',
+            description: `MG ${inst.installmentNumber}ª parcela${inst.year ? ` Ano ${String(inst.year).replace(/\D/g, '')}` : ''}`,
             license: license?.nomelicenciador || '-',
             contract: contract.contractNumber || contract.id,
             installmentNumber: inst.installmentNumber,
@@ -9749,6 +9750,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
             licenseId: contract.licenseId,
             contractId: contract.id,
             type: 'Fundo de Marketing (CMF)',
+            description: `CMF ${inst.installmentNumber}ª parcela${inst.year ? ` Ano ${String(inst.year).replace(/\D/g, '')}` : ''}`,
             license: license?.nomelicenciador || '-',
             contract: contract.contractNumber || contract.id,
             installmentNumber: inst.installmentNumber,
@@ -9767,156 +9769,118 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
       }
 
       // 3. Excess Royalties (Calculated based on periods)
-      if (contract.isDividedIntoYears && contract.years && contract.years.length > 0) {
-        contract.years.forEach((cy) => {
-          const startDt = new Date(cy.startDate + 'T00:00:00');
-          const endDt = new Date(cy.endDate + 'T23:59:59');
-          
-          const contractReports = reports.filter(r => {
-            if (r.contractId !== contract.id) return false;
-            const reportDate = new Date(r.year, r.month - 1, 15); // middle of month
-            return reportDate >= startDt && reportDate <= endDt;
-          });
-          
-          const totalRoyalty = contractReports.reduce((sum, r) => sum + (r.royaltyValue || 0), 0);
-          
-          // Total MG for this year: sum of installments belonging to this year
-          // We match by the 'year' field OR by the dueDate falling within the period
-          const mgForYear = (contract.mgInstallments || [])
-            .filter(inst => {
-              // Priority 1: Direct match with yearNumber (e.g. "1" or "Ano 1")
-              const instYearStr = String(inst.year || '').replace(/\D/g, ''); // Extract only digits
-              if (instYearStr === String(cy.yearNumber)) return true;
-              
-              // Priority 2: Match by date range if year is not explicitly set or doesn't match numerically
-              if (inst.dueDate) {
-                const instDate = new Date(inst.dueDate + 'T12:00:00');
-                return instDate >= startDt && instDate <= endDt;
-              }
-              return false;
-            })
-            .reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
-          
-          if (totalRoyalty > mgForYear + 0.01) { // Small epsilon to avoid float rounding issues
-            const excess = totalRoyalty - mgForYear;
-            const matchingPayment = payments.find(p => 
-              p.contractId === contract.id && 
-              p.type === 'excess' && 
-              String(p.year) === String(cy.yearNumber)
-            );
+      const processExcess = (targetCY?: ContractYear) => {
+        let cumulativeRoyalties = 0;
+        let distributedExcess = 0;
 
-            list.push({
-              id: `excess-${contract.id}-${cy.yearNumber}`,
-              licenseId: contract.licenseId,
-              contractId: contract.id,
-              type: 'Royalties Excedentes',
-              license: license?.nomelicenciador || '-',
-              contract: contract.contractNumber || contract.id,
-              installmentNumber: '-',
-              year: cy.yearNumber,
-              amount: excess,
-              currency: contract.currency || 'BRL',
-              invoice: matchingPayment?.invoice || '-',
-              dueDate: cy.endDate, // Due date is typically after year ends
-              status: matchingPayment?.status || 'pending',
-              paymentDate: matchingPayment?.date || '-',
-              documentUrl: matchingPayment?.documentUrl,
-              documentName: matchingPayment?.documentName,
-              rawDate: cy.endDate
-            });
-          }
+        const startDt = targetCY ? new Date(targetCY.startDate + 'T00:00:00') : new Date(contract.startDate + 'T00:00:00');
+        const endDt = targetCY ? new Date(targetCY.endDate + 'T23:59:59') : new Date(contract.endDate + 'T23:59:59');
+        const yearNumber = targetCY ? targetCY.yearNumber : 1;
 
-          // Excess Marketing Fund if calculated via percentage
-          if (contract.hasMarketingFund && contract.marketingFundRate && contract.marketingFundRate > 0) {
-            const totalNetValue = contractReports.reduce((sum, r) => sum + (r.netValue || 0), 0);
-            const calculatedMktFund = totalNetValue * contract.marketingFundRate;
-            
-            // Total of installments for this year - same improved matching logic
-            const mktInstallmentsTotal = (contract.marketingFundInstallments || [])
-              .filter(mi => {
-                const instYearStr = String(mi.year || '').replace(/\D/g, '');
-                if (instYearStr === String(cy.yearNumber)) return true;
-                if (mi.dueDate) {
-                  const instDate = new Date(mi.dueDate + 'T12:00:00');
-                  return instDate >= startDt && instDate <= endDt;
-                }
-                return false;
-              })
-              .reduce((sum, mi) => sum + Number(mi.amount || 0), 0);
-
-            if (calculatedMktFund > mktInstallmentsTotal + 0.01) {
-              const excessMkt = calculatedMktFund - mktInstallmentsTotal;
-              const matchingPayment = payments.find(p => 
-                p.contractId === contract.id && 
-                p.type === 'marketing' && 
-                String(p.year) === String(cy.yearNumber) &&
-                !p.installmentNumber // No installment number usually means it's the excess
-              );
-
-              list.push({
-                id: `excess-mkt-${contract.id}-${cy.yearNumber}`,
-                licenseId: contract.licenseId,
-                contractId: contract.id,
-                type: 'Fundo de Marketing (CMF) Excedente',
-                license: license?.nomelicenciador || '-',
-                contract: contract.contractNumber || contract.id,
-                installmentNumber: '-',
-                year: cy.yearNumber,
-                amount: excessMkt,
-                currency: contract.currency || 'BRL',
-                invoice: matchingPayment?.invoice || '-',
-                dueDate: cy.endDate,
-                status: matchingPayment?.status || 'pending',
-                paymentDate: matchingPayment?.date || '-',
-                documentUrl: matchingPayment?.documentUrl,
-                documentName: matchingPayment?.documentName,
-                rawDate: cy.endDate
-              });
-            }
-          }
-        });
-      } else {
-        // Fallback for contracts not explicitly divided into years
-        const startDt = new Date(contract.startDate + 'T00:00:00');
-        const endDt = new Date(contract.endDate + 'T23:59:59');
-        
         const contractReports = reports.filter(r => {
           if (r.contractId !== contract.id) return false;
           const reportDate = new Date(r.year, r.month - 1, 15);
           return reportDate >= startDt && reportDate <= endDt;
         });
-        
-        const totalRoyalty = contractReports.reduce((sum, r) => sum + (r.royaltyValue || 0), 0);
-        const totalMG = (contract.mgInstallments || []).reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
-        
-        if (totalRoyalty > totalMG + 0.01) {
-          const excess = totalRoyalty - totalMG;
-          const matchingPayment = payments.find(p => 
-            p.contractId === contract.id && 
-            p.type === 'excess' && 
-            !p.installmentNumber
-          );
 
-          list.push({
-            id: `excess-${contract.id}-total`,
-            licenseId: contract.licenseId,
-            contractId: contract.id,
-            type: 'Royalties Excedentes',
-            license: license?.nomelicenciador || '-',
-            contract: contract.contractNumber || contract.id,
-            installmentNumber: '-',
-            year: '-',
-            amount: excess,
-            currency: contract.currency || 'BRL',
-            invoice: matchingPayment?.invoice || '-',
-            dueDate: contract.endDate,
-            status: matchingPayment?.status || 'pending',
-            paymentDate: matchingPayment?.date || '-',
-            documentUrl: matchingPayment?.documentUrl,
-            documentName: matchingPayment?.documentName,
-            rawDate: contract.endDate
-          });
-        }
+        // Grouping reports by reporting period
+        const periodGroups: { [key: string]: { royalty: number, endDate: string, year: number, month?: number } } = {};
+        const frequency = contract.reportingFrequency || 'Trimestral';
+
+        contractReports.forEach(r => {
+          let periodKey: string;
+          let periodEndDate: string;
+
+          if (frequency === 'Mensal') {
+            periodKey = `${r.year}-${String(r.month).padStart(2, '0')}`;
+            const lastDay = new Date(r.year, r.month, 0);
+            periodEndDate = lastDay.toISOString().split('T')[0];
+          } else {
+            // Trimestral
+            const quarter = Math.floor((r.month - 1) / 3) + 1;
+            periodKey = `${r.year}-Q${quarter}`;
+            const lastMonthOfQuarter = quarter * 3;
+            const lastDay = new Date(r.year, lastMonthOfQuarter, 0);
+            periodEndDate = lastDay.toISOString().split('T')[0];
+          }
+
+          if (!periodGroups[periodKey]) {
+            periodGroups[periodKey] = { royalty: 0, endDate: periodEndDate, year: r.year, month: frequency === 'Mensal' ? r.month : undefined };
+          }
+          periodGroups[periodKey].royalty += (r.royaltyValue || 0);
+        });
+
+        const mgForYear = (contract.mgInstallments || [])
+          .filter(inst => {
+            const instYearStr = String(inst.year || '').replace(/\D/g, '');
+            if (instYearStr === String(yearNumber)) return true;
+            if (inst.dueDate) {
+              const instDate = new Date(inst.dueDate + 'T12:00:00');
+              return instDate >= startDt && instDate <= endDt;
+            }
+            return false;
+          })
+          .reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
+
+        const sortedPeriodKeys = Object.keys(periodGroups).sort();
+        const deadlineDays = parseInt(contract.paymentDeadline?.replace(/\D/g, '') || contract.reportingDeadline?.replace(/\D/g, '') || "30", 10);
+
+        sortedPeriodKeys.forEach(periodKey => {
+          const group = periodGroups[periodKey];
+          cumulativeRoyalties += group.royalty;
+
+          // Process Royalties Excess
+          if (cumulativeRoyalties > mgForYear + 0.01) {
+            const totalExcessSoFar = cumulativeRoyalties - mgForYear;
+            const currentPeriodExcess = totalExcessSoFar - distributedExcess;
+
+            if (currentPeriodExcess > 0.01) {
+              const matchingPayment = payments.find(p => 
+                p.contractId === contract.id && 
+                p.type === 'excess' && 
+                (p.notes?.includes(periodKey) || (p.year === String(group.year) && p.month === group.month))
+              );
+
+              // Match CMF due date logic (same day of following month)
+              const [yr, mn] = group.endDate.split('-').map(Number);
+              const computedDate = new Date(yr, mn, deadlineDays);
+              const calculatedDueDate = computedDate.toISOString().split('T')[0];
+
+              list.push({
+                id: `excess-${contract.id}-${periodKey}`,
+                licenseId: contract.licenseId,
+                contractId: contract.id,
+                type: 'Royalties Excedentes',
+                description: `Royalties Excedentes ${group.year}-${group.month ? String(group.month).padStart(2, '0') : periodKey.split('-')[1]}${targetCY ? ` Ano ${targetCY.yearNumber}` : ''}`,
+                license: license?.nomelicenciador || '-',
+                contract: contract.contractNumber || contract.id,
+                installmentNumber: '-',
+                year: targetCY ? targetCY.yearNumber : group.year,
+                month: group.month,
+                amount: currentPeriodExcess,
+                currency: contract.currency || 'BRL',
+                invoice: matchingPayment?.invoice || '-',
+                dueDate: matchingPayment?.dueDate || calculatedDueDate,
+                status: matchingPayment?.status || 'pending',
+                paymentDate: matchingPayment?.date || '-',
+                documentUrl: matchingPayment?.documentUrl,
+                documentName: matchingPayment?.documentName,
+                notes: `Execesso Real de Royalties - Período ${periodKey}`,
+                rawDate: calculatedDueDate
+              });
+
+              distributedExcess += currentPeriodExcess;
+            }
+          }
+        });
+      };
+
+      if (contract.isDividedIntoYears && contract.years && contract.years.length > 0) {
+        contract.years.forEach((cy) => {
+          processExcess(cy);
+        });
+      } else {
+        processExcess();
       }
     });
     
@@ -9929,6 +9893,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
         licenseId: ob.licenseId,
         contractId: ob.contractId,
         type: ob.type === 'CMF' ? 'Fundo de Marketing (CMF)' : ob.type,
+        description: ob.notes || ob.type,
         license: license?.nomelicenciador || '-',
         contract: contract?.contractNumber || contract?.id || ob.contractId,
         installmentNumber: '-',
@@ -10394,12 +10359,10 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                   <SortableHeader label="Licenciador" sortKey="license" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Contrato" sortKey="contract" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Tipo" sortKey="type" currentSort={obligationSortConfig} onSort={requestObligationSort} />
-                  <SortableHeader label="Nº Parcela" sortKey="installmentNumber" currentSort={obligationSortConfig} onSort={requestObligationSort} />
-                  <SortableHeader label="Ano" sortKey="year" currentSort={obligationSortConfig} onSort={requestObligationSort} />
+                  <SortableHeader label="Descrição" sortKey="description" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Valor" sortKey="amount" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Vencimento" sortKey="dueDate" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Invoice/NF" sortKey="invoice" currentSort={obligationSortConfig} onSort={requestObligationSort} />
-                  <SortableHeader label="Observações" sortKey="notes" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Status" sortKey="status" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <SortableHeader label="Data Pgto" sortKey="paymentDate" currentSort={obligationSortConfig} onSort={requestObligationSort} />
                   <th className="px-4 py-3 text-center">Doc</th>
@@ -10409,17 +10372,15 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
               <tbody className="divide-y divide-slate-200">
                 {sortedObligations.map((ob: any) => (
                   <tr key={ob.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-[13px] font-medium text-slate-800 truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-800 font-medium truncate max-w-[120px]" title={ob.license}>{ob.license}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.contract}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 font-normal">{ob.type}</td>
-                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.installmentNumber}</td>
-                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.year}{ob.month ? ` - Mês ${ob.month}` : ''}</td>
+                    <td className="px-4 py-3 text-[13px] text-slate-600">{ob.description}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap w-auto">
                       {getCurrencySymbol(ob.currency)} {ob.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{formatDateBR(ob.dueDate)}</td>
                     <td className="px-4 py-3 text-[13px] text-slate-600">{ob.invoice}</td>
-                    <td className="px-4 py-3 text-[13px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap max-w-[180px]" title={ob.notes}>{ob.notes || '-'}</td>
                     <td className="px-4 py-3 text-center">
                       {ob.status === 'paid' ? (
                         <div className="flex items-center justify-center gap-1.5 text-emerald-600 font-bold text-[9px]">
@@ -10463,7 +10424,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                 ))}
                 {obligations.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center text-slate-400 italic">Nenhuma parcela ou obrigação detectada.</td>
+                    <td colSpan={10} className="px-4 py-8 text-center text-slate-400 italic">Nenhuma parcela ou obrigação detectada.</td>
                   </tr>
                 )}
               </tbody>
