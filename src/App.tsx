@@ -8006,7 +8006,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
                       {activeTab === 'sales_fob' && (
                         <td className="px-6 py-3 text-sm text-slate-600 text-right whitespace-nowrap">
-                          {currencyView === 'brl' && isFob && sale.exchangeRate ? `$ ${Number(sale.exchangeRate).toFixed(2)}` : '-'}
+                          {currencyView === 'brl' && isFob && (sale.exchangeRate || sale.dollarRate) ? `$ ${Number(sale.exchangeRate || sale.dollarRate || 0).toFixed(2)}` : '-'}
                         </td>
                       )}
                       <td className="px-4 py-3 text-sm text-slate-600 text-right">

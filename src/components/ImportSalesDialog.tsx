@@ -133,7 +133,7 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           return;
         }
 
-        const dateRaw = getVal(["date", "data", "data da venda", "data venda", "venda"]);
+        const dateRaw = getVal(["date", "data", "data da venda", "data venda", "venda", "data_invoice", "data invoice"]);
         const monthRaw = getVal(["mês", "mes", "month", "competencia", "competência", "mês ref", "mes ref"]);
         const yearRaw = getVal(["ano", "year", "exercicio", "exercício", "ano ref"]);
 
@@ -234,9 +234,9 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           const netValueUSD = parseNum(getVal(["valor_liquido", "valor liquido", "valor líquido"]));
           const dollarRate = parseNum(getVal(["taxa_dolar", "taxa dolar", "taxa de dolar"])) || 1;
 
-          saleData.invoice = String(getVal(["invoice", "data_invoice", "nf", "nota fiscal"]) || '').trim();
+          saleData.invoice = String(getVal(["invoice", "nf", "nota fiscal"]) || '').trim();
           saleData.fabricante = String(getVal(["fabricante", "manufacturer"]) || '').trim();
-          saleData.dollarRate = dollarRate;
+          saleData.exchangeRate = dollarRate;
           
           // USD Fields
           saleData.valor_unitario_usd = unitPriceUSD;
@@ -247,14 +247,14 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           saleData.ipi_usd = ipiUSD;
           saleData.valor_liquido_usd = netValueUSD;
 
-          // BRL Fields (Not calculated here anymore as per request)
-          saleData.valor_unitario_brl = 0; // Or keep as is, but don't multiply
-          saleData.valor_total_brl = 0;
-          saleData.icms_brl = 0;
-          saleData.pis_brl = 0;
-          saleData.cofins_brl = 0;
-          saleData.ipi_brl = 0;
-          saleData.valor_liquido_brl = 0;
+          // BRL Fields - Populate with raw values as requested, no multiplication
+          saleData.valor_unitario_brl = unitPriceUSD;
+          saleData.valor_total_brl = totalValueUSD;
+          saleData.icms_brl = icmsUSD;
+          saleData.pis_brl = pisUSD;
+          saleData.cofins_brl = cofinsUSD;
+          saleData.ipi_brl = ipiUSD;
+          saleData.valor_liquido_brl = netValueUSD;
 
           // Keep standard fields for generic logic fallback if needed
           saleData.unitPrice = unitPriceUSD;
@@ -332,10 +332,10 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
         headers = [
           "sku", "produto", "quantidade", "valor_unitario", "valor_total", 
           "icms", "pis", "cofins", "ipi", "valor_liquido", 
-          "ean", "data_invoice", "fabricante", "taxa_dolar"
+          "ean", "data_invoice", "fabricante", "taxa_dolar", "invoice"
         ];
         sampleData = [
-          ["SKU-FOB", "Produto Importado", 10, 10.50, 105.00, 0, 0, 0, 0, 105.00, "1234567890123", "2026-01-01", "Importadora ABC", 5.45]
+          ["SKU-FOB", "Produto Importado", 10, 10.50, 105.00, 0, 0, 0, 0, 105.00, "1234567890123", "2026-01-01", "Importadora ABC", 5.45, "INV123"]
         ];
       } else {
         headers = [
@@ -351,7 +351,7 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Template Vendas");
       
-      XLSX.writeFile(workbook, "template_importacao_vendas.xlsx");
+      XLSX.writeFile(workbook, "template_importacao_importados.xlsx");
       toast.success("Template baixado com sucesso.");
     } catch (error) {
       console.error("Erro ao gerar template:", error);
@@ -374,7 +374,7 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
               <>
                 Para <strong>FOB (Importados)</strong>, a planilha deve conter as seguintes colunas (valores em USD):<br/>
                 <code className="text-xs bg-slate-100 p-1 rounded mt-2 block">
-                  sku, produto, quantidade, valor_unitario, valor_total, icms, pis, cofins, ipi, valor_liquido, ean, data_invoice, fabricante, taxa_dolar
+                  sku, produto, quantidade, valor_unitario, valor_total, icms, pis, cofins, ipi, valor_liquido, ean, data_invoice, fabricante, taxa_dolar, invoice
                 </code>
               </>
             ) : (
