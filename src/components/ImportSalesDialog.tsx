@@ -247,14 +247,14 @@ export function ImportSalesDialog({ products, collectionName = 'sales', buttonTe
           saleData.ipi_usd = ipiUSD;
           saleData.valor_liquido_usd = netValueUSD;
 
-          // BRL Fields (Converted)
-          saleData.valor_unitario_brl = unitPriceUSD * dollarRate;
-          saleData.valor_total_brl = totalValueUSD * dollarRate;
-          saleData.icms_brl = icmsUSD * dollarRate;
-          saleData.pis_brl = pisUSD * dollarRate;
-          saleData.cofins_brl = cofinsUSD * dollarRate;
-          saleData.ipi_brl = ipiUSD * dollarRate;
-          saleData.valor_liquido_brl = netValueUSD * dollarRate;
+          // BRL Fields (Not calculated here anymore as per request)
+          saleData.valor_unitario_brl = 0; // Or keep as is, but don't multiply
+          saleData.valor_total_brl = 0;
+          saleData.icms_brl = 0;
+          saleData.pis_brl = 0;
+          saleData.cofins_brl = 0;
+          saleData.ipi_brl = 0;
+          saleData.valor_liquido_brl = 0;
 
           // Keep standard fields for generic logic fallback if needed
           saleData.unitPrice = unitPriceUSD;

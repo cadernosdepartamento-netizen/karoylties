@@ -27,11 +27,9 @@ export function BatchDeleteProductsDialog({ selectedProductIds, onComplete }: { 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger nativeButton={true} render={
-        <button className={cn(buttonVariants({ variant: "destructive" }), "gap-2")}>
+      <DialogTrigger render={<button className={cn(buttonVariants({ variant: "destructive" }), "gap-2")} />}>
           <Trash2 size={16} /> Excluir Selecionados
-        </button>
-      } />
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Exclusão em Lote</DialogTitle>

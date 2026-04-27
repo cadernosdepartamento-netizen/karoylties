@@ -11,9 +11,10 @@ interface MultiSelectDropdownProps {
   placeholder?: string;
   className?: string;
   contentClassName?: string;
+  pluralLabel?: string;
 }
 
-export function MultiSelectDropdown({ options, selectedValues, onChange, placeholder = "Selecione...", className, contentClassName }: MultiSelectDropdownProps) {
+export function MultiSelectDropdown({ options, selectedValues, onChange, placeholder = "Selecione...", className, contentClassName, pluralLabel }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -57,7 +58,9 @@ export function MultiSelectDropdown({ options, selectedValues, onChange, placeho
             <span className="truncate">
               {selectedValues.length === 0 
                 ? <span className="text-muted-foreground">{placeholder}</span>
-                : selectedLabels.join(", ")
+                : selectedValues.length === 1 
+                  ? selectedLabels[0]
+                  : `${selectedValues.length} ${pluralLabel || 'itens'} selecionados`
               }
             </span>
             <ChevronDown size={14} className="ml-2 shrink-0 opacity-50" />

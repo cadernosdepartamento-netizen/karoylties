@@ -82,6 +82,7 @@ import { EditProductDialog } from './components/EditProductDialog';
 import { BatchEditProductsDialog } from './components/BatchEditProductsDialog';
 import { DeleteProductDialog } from './components/DeleteProductDialog';
 import { BatchDeleteProductsDialog } from './components/BatchDeleteProductsDialog';
+import { BatchEditSalesDialog } from './components/BatchEditSalesDialog';
 import { MultiSelectDropdown } from './components/MultiSelectDropdown';
 import { ImportSalesDialog } from './components/ImportSalesDialog';
 import { ClearProductsDialog } from './components/ClearProductsDialog';
@@ -5603,6 +5604,7 @@ function AddReportDialog({ contracts, lines, products, licenses, sales, netSales
                 selectedValues={selectedProductSkus}
                 onChange={setSelectedProductSkus}
                 placeholder="Selecione os produtos"
+                pluralLabel="produtos"
                 contentClassName="w-max sm:w-max min-w-[var(--radix-popover-trigger-width)] max-w-lg sm:max-w-2xl"
               />
               <p className="text-[10px] text-slate-400">Mostrando {availableProducts.length} produtos disponíveis.</p>
@@ -7293,7 +7295,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
     return Array.from(groups.values());
   }, [filteredSales, activeTab, currencyView]);
 
-  const [viewMode, setViewMode] = useState<'grouped' | 'individual'>('grouped');
+  const [viewMode, setViewMode] = useState<'grouped' | 'individual'>(activeTab === 'sales_fob' ? 'individual' : 'grouped');
 
   const individualSalesWithCalculatedFields = React.useMemo(() => {
     return filteredSales.map(sale => {
@@ -7797,20 +7799,30 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
               <div className="flex items-center gap-2">
                 {selectedSales.length > 0 && viewMode === 'individual' && (
                   <>
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-2">
-                      <Edit size={14} /> Editar {selectedSales.length} Selecionados
-                    </Button>
+                    <BatchEditSalesDialog 
+                      selectedSaleIds={selectedSales} 
+                      collectionName={collectionName}
+                      licenses={licenses}
+                      lines={lines}
+                      categories={categories}
+                      onComplete={() => setSelectedSales([])}
+                    />
                     <Button 
                       variant="destructive" 
                       size="sm" 
                       className="h-7 text-xs gap-2"
                       onClick={async () => {
                         if (confirm(`Tem certeza que deseja apagar ${selectedSales.length} venda(s) selecionada(s)?`)) {
-                          const batch = writeBatch(db);
-                          selectedSales.forEach(id => batch.delete(doc(db, collectionName, id)));
-                          await batch.commit();
-                          setSelectedSales([]);
-                          toast.success(`${selectedSales.length} vendas apagadas.`);
+                          try {
+                            const batch = writeBatch(db);
+                            selectedSales.forEach(id => batch.delete(doc(db, collectionName, id)));
+                            await batch.commit();
+                            setSelectedSales([]);
+                            toast.success(`${selectedSales.length} vendas apagadas.`);
+                          } catch (err: any) {
+                            console.error(err);
+                            toast.error('Erro ao apagar vendas. Verifique suas permissões.');
+                          }
                         }
                       }}
                     >
@@ -7993,7 +8005,7 @@ function SalesView({ sales, licenses, lines, categories, products, contracts, is
                       <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={sale.description}>{sale.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-600">{sale.quantity.toLocaleString('pt-BR')}</td>
                       {activeTab === 'sales_fob' && (
-                        <td className="px-4 py-3 text-sm text-slate-600 text-right">
+                        <td className="px-6 py-3 text-sm text-slate-600 text-right whitespace-nowrap">
                           {currencyView === 'brl' && isFob && sale.exchangeRate ? `$ ${Number(sale.exchangeRate).toFixed(2)}` : '-'}
                         </td>
                       )}
