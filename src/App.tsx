@@ -89,6 +89,7 @@ import { ClearProductsDialog } from './components/ClearProductsDialog';
 import { SearchableSelect } from './components/SearchableSelect';
 import { useSortableData } from './hooks/useSortableData';
 import { SortableHeader } from './components/SortableHeader';
+import { ContractDashboardView } from './components/ContractDashboardView';
 
 // Utility to safely handle different date formats from Excel/Firestore
 const getSafeDate = (dateVal: string | number) => {
@@ -2725,7 +2726,7 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
           )
         }
       />
-      <DialogContent className="w-[40vw] !max-w-[40vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] w-[95vw] max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex justify-between items-start">
             <div>
@@ -3363,274 +3364,8 @@ function ContractDetailsDialog({ contract, licenses, lines, products, contracts,
             </DialogFooter>
           </form>
         ) : (
-          <div className="space-y-8 pt-4">
-            {/* Seção 1: Identificação */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">1. Identificação do Contrato</h3>
-              <div className="grid grid-cols-4 gap-6">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Licenciador</p>
-                  <p className="text-sm font-semibold text-slate-900">{license?.nomelicenciador || (contract.licenseId ? `ID: ${contract.licenseId.slice(0, 5)}` : '-')}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Contrato</p>
-                  <p className="text-sm font-semibold text-slate-900">{contract.contractNumber || `ID: ${contract.id.slice(0, 5)}`}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</p>
-                  <Badge className={
-                    contract.status === 'Ativo' ? "bg-emerald-100 text-emerald-700 border-none" :
-                    contract.status === 'Encerrado' ? "bg-slate-100 text-slate-700 border-none" :
-                    "bg-amber-100 text-amber-700 border-none"
-                  }>
-                    {contract.status || 'Ativo'}
-                  </Badge>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moeda</p>
-                  <p className="text-sm text-slate-700 font-medium">{contract.currency || 'BRL'}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 2: Vigência e Sell-off */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">2. Vigência e Período de Sell-off</h3>
-              <div className="grid grid-cols-4 gap-6">
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vigência</p>
-                  <p className="text-sm text-slate-700 font-medium">{formatDateBR(contract.startDate)} - {formatDateBR(contract.endDate)}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Compensação</p>
-                  <p className="text-sm text-slate-700 font-medium">Royalty</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Período Sell-off</p>
-                  <p className="text-sm text-slate-700 font-medium">{contract.sellOffPeriod ? `${contract.sellOffPeriod} dias` : '-'}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Final Sell-off</p>
-                  <p className="text-sm text-slate-700 font-medium">{formatDateBR(contract.sellOffEndDate)}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 3: Valores de MG */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">3. Valores de Mínimo Garantido (MG)</h3>
-              <div className="grid grid-cols-1 gap-4">
-                <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg border border-blue-100">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Mínimo Garantido Total</p>
-                    <p className="text-2xl font-black text-blue-700">
-                      {getCurrencySymbol(contract.currency || 'BRL')} {contract.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  {contract.isDividedIntoYears && (
-                    <Badge variant="outline" className="bg-white text-blue-600 border-blue-200">Contrato Plurianual</Badge>
-                  )}
-                </div>
-                
-                {contract.isDividedIntoYears && contract.years && (
-                  <div className="grid grid-cols-3 gap-4">
-                    {contract.years.map((y: any) => (
-                      <div key={y.yearNumber} className="p-3 border rounded-lg bg-slate-50">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ano {y.yearNumber}</p>
-                        <p className="text-sm font-bold text-slate-900">
-                          {getCurrencySymbol(contract.currency || 'BRL')} {y.minimumGuarantee.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          {formatDateBR(y.startDate)} - {formatDateBR(y.endDate)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Seção 4: Royalties e Apuração */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">4. Taxas de Royalties e Apuração</h3>
-              <div className="grid grid-cols-4 gap-6">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Periodicidade</p>
-                  <p className="text-sm text-slate-700 font-medium">{contract.reportingFrequency || '-'}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prazo de Envio</p>
-                  <p className="text-sm text-slate-700 font-medium">{contract.reportingDeadline ? `${contract.reportingDeadline} dias após período` : '-'}</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-4 mt-4">
-                <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendas Líquidas</p>
-                    <Badge variant="outline" className="text-[9px] h-4 px-1">{contract.royaltyRateNetSales1 ? 'Ativo' : 'N/A'}</Badge>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900">{Number(((contract.royaltyRateNetSales1 || 0) * 100).toFixed(2))}%</p>
-                  {contract.royaltyNetSalesNotes && <p className="text-[10px] text-slate-500 italic">{contract.royaltyNetSalesNotes}</p>}
-                  {contract.hasAdditionalNetSales && (
-                    <div className="pt-2 border-t border-slate-200">
-                      <p className="text-[9px] text-slate-400 uppercase font-bold">Taxa Adicional</p>
-                      <p className="text-sm font-bold text-slate-700">{Number(((contract.royaltyRateNetSales2 || 0) * 100).toFixed(2))}%</p>
-                      {contract.royaltyNetSalesNotes2 && <p className="text-[10px] text-slate-500 italic">{contract.royaltyNetSalesNotes2}</p>}
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Compras Líquidas</p>
-                    <Badge variant="outline" className="text-[9px] h-4 px-1">{contract.royaltyRateNetPurchases ? 'Ativo' : 'N/A'}</Badge>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900">{Number(((contract.royaltyRateNetPurchases || 0) * 100).toFixed(2))}%</p>
-                  {contract.royaltyNetPurchasesNotes && <p className="text-[10px] text-slate-500 italic">{contract.royaltyNetPurchasesNotes}</p>}
-                </div>
-
-                <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">FOB</p>
-                    <Badge variant="outline" className="text-[9px] h-4 px-1">{contract.royaltyRateFOB ? 'Ativo' : 'N/A'}</Badge>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900">{Number(((contract.royaltyRateFOB || 0) * 100).toFixed(2))}%</p>
-                  {contract.royaltyFOBNotes && <p className="text-[10px] text-slate-500 italic">{contract.royaltyFOBNotes}</p>}
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 5: Pagamento e Marketing */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">5. Condições de Pagamento e Marketing</h3>
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prazo de Pagamento</p>
-                    <p className="text-sm text-slate-700 font-medium">{contract.paymentDeadline ? `${contract.paymentDeadline} dias após apuração` : '-'}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parcelas de MG</p>
-                    <div className="space-y-2">
-                      {contract.mgInstallments && contract.mgInstallments.length > 0 ? (
-                        contract.mgInstallments.map((inst: any) => (
-                          <div key={inst.installmentNumber} className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-100 text-xs">
-                            <span className="font-medium text-slate-600">Parcela {inst.installmentNumber} {inst.year ? `(${inst.year})` : ''}</span>
-                            <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            <span className="text-slate-500">{formatDateBR(inst.dueDate)}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-slate-400 italic">Nenhuma parcela definida</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fundo de Marketing</p>
-                  </div>
-                  {contract.hasMarketingFund ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Taxa</p>
-                          <p className="text-sm font-bold text-slate-900">{Number(((contract.marketingFundRate || 0) * 100).toFixed(2))}%</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">Tipo</p>
-                          <p className="text-xs font-semibold text-slate-700">{contract.marketingFundType || '-'}</p>
-                        </div>
-                      </div>
-
-                      {contract.hasMarketingFundInstallments && contract.marketingFundInstallments && contract.marketingFundInstallments.length > 0 && (
-                        <div className="space-y-2 pt-3 border-t border-slate-100">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parcelas de Adiantamento</p>
-                          <div className="space-y-2">
-                            {contract.marketingFundInstallments.map((inst: any) => (
-                              <div key={inst.installmentNumber} className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-100 text-xs">
-                                <span className="font-medium text-slate-600">Parcela {inst.installmentNumber} {inst.year ? `(${inst.year})` : ''}</span>
-                                <span className="font-bold text-slate-900">{getCurrencySymbol(contract.currency || 'BRL')} {inst.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                <span className="text-slate-500">{formatDateBR(inst.dueDate)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">Inativo</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 6: Propriedades e Linhas */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">6. Propriedades, Marcas e Linhas</h3>
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Informações de Propriedades</p>
-                  <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100 min-h-[60px]">
-                    {contract.propertiesInfo || 'Nenhuma informação adicional'}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Linhas Vinculadas</p>
-                  <div className="flex flex-wrap gap-2">
-                    {linkedLines.map(l => (
-                      <Badge key={l.id} variant="outline" className="bg-white border-slate-200 text-slate-700">{l.nomelinha || `ID: ${l.id.slice(0, 5)}`}</Badge>
-                    ))}
-                    {linkedLines.length === 0 && <span className="text-xs text-slate-400 italic">Nenhuma linha vinculada</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Seção 7: Produtos por Categoria */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">7. Produtos por Categoria</h3>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                {productsByCat.map(({ category, products }) => (
-                  <div key={category} className="space-y-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l-2 border-blue-200 pl-2">{category}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {products.map(p => (
-                        <Badge key={p.id} variant="secondary" className="bg-slate-100 text-slate-600 border-none text-[10px] py-0 px-2 h-5">{p.name || `ID: ${p.id.slice(0, 5)}`}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {productsByCat.length === 0 && <span className="text-xs text-slate-400 italic col-span-2">Nenhum produto vinculado a categorias.</span>}
-              </div>
-            </div>
-
-            {/* Seção 8: Contrato Assinado */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider border-b pb-2">8. Documentação</h3>
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white rounded-md border border-slate-200">
-                    <FileText size={20} className="text-slate-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Contrato Assinado (PDF/Link)</p>
-                    <p className="text-xs text-slate-500">{contract.signedContractUrl ? 'Documento disponível' : 'Nenhum documento anexado'}</p>
-                  </div>
-                </div>
-                {contract.signedContractUrl && (
-                  <Button variant="outline" size="sm" className="gap-2" render={
-                    <a href={contract.signedContractUrl} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink size={14} /> Abrir Documento
-                    </a>
-                  } />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+  <ContractDashboardView contract={contract} />
+) }
       </DialogContent>
     </Dialog>
   );
@@ -10265,9 +10000,7 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                                   <thead className="bg-slate-50 text-slate-500">
                                     <tr>
                                       <th className="px-2 py-1.5 font-medium">Licenciador</th>
-                                      <th className="px-2 py-1.5 font-medium">Tipo</th>
-                                      <th className="px-2 py-1.5 font-medium text-center">Parcela</th>
-                                      <th className="px-2 py-1.5 font-medium text-center">Ano</th>
+                                      <th className="px-2 py-1.5 font-medium">Descrição</th>
                                       <th className="px-2 py-1.5 font-medium text-right">Valor</th>
                                       <th className="px-2 py-1.5 font-medium text-center">Status</th>
                                     </tr>
@@ -10276,13 +10009,11 @@ function PaymentsView({ payments, contracts, licenses, lines, reports, dbObligat
                                     {cellData?.items.map((item: any, idx: number) => (
                                       <tr key={`${idx}-${item.license || 'N/A'}`} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-2 py-1.5 truncate max-w-[120px]" title={item.license}>{item.license}</td>
-                                        <td className="px-2 py-1.5 truncate max-w-[120px]" title={item.type}>
-                                          {item.type?.includes('Mínimo Garantido') ? 'MG' : 
+                                        <td className="px-2 py-1.5 truncate max-w-[150px]" title={item.notes || item.type}>
+                                          {item.description || item.notes || (item.type?.includes('Mínimo Garantido') ? 'MG' : 
                                            item.type?.includes('Fundo de Marketing') ? 'CMF' : 
-                                           item.type}
+                                           item.type)}
                                         </td>
-                                        <td className="px-2 py-1.5 text-center">{item.installmentNumber || '-'}</td>
-                                        <td className="px-2 py-1.5 text-center">{item.year || '-'}</td>
                                         <td className="px-2 py-1.5 text-right font-medium text-slate-700">
                                           {(Number(item.amount) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
